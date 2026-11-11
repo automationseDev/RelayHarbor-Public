@@ -1,12 +1,5 @@
 name: Relay API Tests
 on:
-  push:
-    branches: [main, 'feat/**']
-    paths:
-      - 'relay/**'
-      - '.github/workflows/relay-ci.yml'
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
