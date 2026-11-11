@@ -79,6 +79,46 @@ $env:ANDROID_HOME = $sdk
 if ($LASTEXITCODE -ne 0) {
     throw 'Log in with: gh auth login -h github.com -p https -w'
 }
+$githubLogin = (& gh api user --jq .login | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $githubLogin) { throw 'Unable to read authenticated GitHub identity' }
+$githubId = (& gh api user --jq .id | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $githubId -notmatch '^\d+
+$venvPython = Join-Path $venv 'Scripts\python.exe'
+if (-not (Test-Path $venvPython)) {
+    & python -m venv $venv
+    if ($LASTEXITCODE -ne 0) { throw 'Python virtual environment creation failed' }
+}
+& $venvPython -m pip install --disable-pip-version-check -r (Join-Path $root 'relay\requirements.txt') 'pytest==8.3.5'
+if ($LASTEXITCODE -ne 0) { throw 'Relay Python dependencies installation failed' }
+
+Push-Location $root
+try {
+    & python scripts/check_public_contract.py
+    if ($LASTEXITCODE -ne 0) { throw 'Public update contract verification failed' }
+    & python scripts/privacy_preflight.py
+    if ($LASTEXITCODE -ne 0) { throw 'Public privacy preflight failed' }
+    & gh label create 'ci:ready' -R 'automationseDev/RelayHarbor-Public' --color '1D76DB' --description 'Trusted PR approved for local CI and conditional merge' --force | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to create ci:ready label. Check GitHub CLI authorization.' }
+} finally { Pop-Location }
+
+if ($InstallTask) {
+    $runner = Join-Path $root 'tools\local-ci\Run-RelayCi.ps1'
+    $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $runner + '" -Mode Pr -Merge'
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments -WorkingDirectory $root
+    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 10) -RepetitionDuration (New-TimeSpan -Days 365)
+    $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
+    Register-ScheduledTask -TaskName 'RelayHarborLocalCI' -Action $action -Trigger $trigger -Principal $principal -Description 'Windows-local CI validates trusted PRs and merges only after successful Android+Relay tests' -Force | Out-Null
+    Write-Host 'Installed: Task Scheduler > RelayHarborLocalCI (every 10 minutes, user logged in)'
+}
+Write-Host 'Local CI ready. Manual test: powershell -File tools/local-ci/Run-RelayCi.ps1 -Mode Pr -Merge'
+Write-Host 'Next PR: gh pr edit NUMBER -R automationseDev/RelayHarbor-Public --add-label ci:ready'
+Write-Host 'Release signing: powershell -File tools/local-ci/Set-RelaySigning.ps1 -KeystorePath C:\secure\original-release.jks -Alias relayharbor'
+) { throw 'Unable to read authenticated GitHub user ID' }
+& git -C $root config user.name $githubLogin
+if ($LASTEXITCODE -ne 0) { throw 'Cannot configure local Git author name' }
+& git -C $root config user.email "${githubId}+${githubLogin}@users.noreply.github.com"
+if ($LASTEXITCODE -ne 0) { throw 'Cannot configure local Git noreply email' }
+Write-Host "Repository-local Git author uses GitHub noreply email; check Settings > Emails for email privacy."
 $venv = Join-Path $state 'venv'
 $venvPython = Join-Path $venv 'Scripts\python.exe'
 if (-not (Test-Path $venvPython)) {
