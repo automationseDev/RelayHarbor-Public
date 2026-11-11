@@ -20,8 +20,36 @@ fi
 
 SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 [[ -n "$SDK" && -d "$SDK" ]] || { echo 'Android SDK location unavailable (ANDROID_SDK_ROOT / ANDROID_HOME)' >&2; exit 1; }
+# Install missing Android SDK components automatically.
+missing=()
+
+[[ -d "$SDK/platforms/android-35" ]] ||
+  missing+=("platforms;android-35")
+
+[[ -d "$SDK/build-tools/35.0.0" ]] ||
+  missing+=("build-tools;35.0.0")
+
+if (( ${#missing[@]} > 0 )); then
+  sdkmanager="$(command -v sdkmanager || true)"
+
+  if [[ -z "$sdkmanager" ]]; then
+    sdkmanager="$(find "$SDK/cmdline-tools" -type f -name sdkmanager -print -quit 2>/dev/null || true)"
+  fi
+
+  [[ -n "$sdkmanager" && -x "$sdkmanager" ]] || {
+    echo "Android sdkmanager not found" >&2
+    exit 1
+  }
+
+  echo "Installing Android SDK: ${missing[*]}"
+  "$sdkmanager" --sdk_root="$SDK" "${missing[@]}" < <(yes)
+fi
+
 for folder in 'platforms/android-35' 'build-tools/35.0.0'; do
-  [[ -d "$SDK/$folder" ]] || { echo "Missing Android SDK component: $folder" >&2; exit 1; }
+  [[ -d "$SDK/$folder" ]] || {
+    echo "Android SDK installation failed: $folder" >&2
+    exit 1
+  }
 done
 printf 'sdk.dir=%s\n' "$SDK" > local.properties
 
