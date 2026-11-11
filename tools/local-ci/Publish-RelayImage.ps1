@@ -42,10 +42,10 @@ try {
     if (-not $version) { throw 'Cannot extract Android versionName' }
     $image = 'ghcr.io/automationsedev/relayharbor-public-relay'
     $short = (& git rev-parse --short=12 HEAD).Trim()
-    $tags = @('--tag',"$image:sha-$short")
+    $tags = @('--tag',"${image}:sha-$short")
     if ($Stable) {
-        $tags += @('--tag',"$image:v$version",'--tag',"$image:stable")
-    } else { $tags += @('--tag',"$image:edge") }
+        $tags += @('--tag',"${image}:v$version",'--tag',"${image}:stable")
+    } else { $tags += @('--tag',"${image}:edge") }
     $token = (& gh auth token | Out-String).Trim()
     if (-not $token) { throw 'GitHub CLI is not authenticated' }
     try {
