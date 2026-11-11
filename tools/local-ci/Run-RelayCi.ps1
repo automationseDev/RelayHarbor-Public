@@ -78,8 +78,12 @@ function Build-Check([string]$Path, [switch]$Signed) {
         }
         & $venv -m pip install --disable-pip-version-check -q -r relay/requirements.txt 'pytest==8.3.5'
         Assert-Exit 'ensure Relay Python dependencies'
-        & $venv -m pytest -q relay/test_server.py relay/test_connections.py relay/test_rss.py
-        Assert-Exit 'Relay API tests'
+        $oldPythonPath = $env:PYTHONPATH
+        $env:PYTHONPATH = (Join-Path $Path 'relay')
+        try {
+            & $venv -m pytest -q relay/test_server.py relay/test_connections.py relay/test_rss.py
+            Assert-Exit 'Relay API tests'
+        } finally { $env:PYTHONPATH = $oldPythonPath }
         if ($Signed) {
             & $ToolGradle --no-daemon :app:assembleRelease :app:testReleaseUnitTest
             Assert-Exit 'signed release Android build and unit tests'
