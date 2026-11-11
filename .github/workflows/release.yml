@@ -6,9 +6,6 @@ on:
         description: 'GitHub release tag (e.g. v0.5.2)'
         required: true
         default: 'v0.5.2'
-  push:
-    tags:
-      - 'v*'
 permissions:
   contents: write
 jobs:
