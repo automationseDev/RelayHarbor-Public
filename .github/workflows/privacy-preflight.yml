@@ -1,13 +1,6 @@
 name: Public Release Privacy Preflight
 
 on:
-  push:
-    branches: [main, 'feat/**']
-    paths:
-      - '**'
-  pull_request:
-    paths:
-      - '**'
   workflow_dispatch:
 
 permissions:
