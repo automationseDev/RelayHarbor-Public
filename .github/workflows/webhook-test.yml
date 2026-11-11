@@ -1,0 +1,136 @@
+name: RelayHarbor Webhook Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel name shown in RelayHarbor
+        required: true
+        default: GitHub Actions
+        type: string
+      message:
+        description: Notification message
+        required: true
+        default: GitHub ActionsからのWebhook送信テストです
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  send-webhook:
+    name: Send test card to RelayHarbor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Endpoint comes from Actions configuration, never from committed personal URLs.
+      RELAY_URL: ${{ secrets.RELAY_GITHUB_INBOUND_URL || vars.RELAY_GITHUB_INBOUND_URL }}
+      RELAY_WEBHOOK_TOKEN: ${{ secrets.RELAY_GITHUB_INBOUND_TOKEN || secrets.RELAY_WEBHOOK_TOKEN }}
+      CHANNEL_NAME: ${{ inputs.channel }}
+      TEST_MESSAGE: ${{ inputs.message }}
+
+    steps:
+      - name: Check integration settings
+        shell: bash
+        run: |
+          if [[ -z "${RELAY_URL}" || "${RELAY_URL}" != https://* ]]; then
+            echo "::error::Set RELAY_GITHUB_INBOUND_URL in Actions secrets (or variables) to your HTTPS integration endpoint."
+            exit 1
+          fi
+          if [[ -z "${RELAY_WEBHOOK_TOKEN}" || ${#RELAY_WEBHOOK_TOKEN} -lt 32 ]]; then
+            echo "::error::Set Actions secret RELAY_GITHUB_INBOUND_TOKEN to the integration bearer token."
+            exit 1
+          fi
+
+      - name: Create sample notification card
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = {
+              "id": "github-actions-{}-{}".format(
+                  os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"]
+              ),
+              "channel_name": os.environ["CHANNEL_NAME"][:60],
+              "sender": "GitHub Actions",
+              "text": os.environ["TEST_MESSAGE"][:10000],
+              "card": {
+                  "schemaVersion": 1,
+                  "title": "GitHub Actions Webhook Test",
+                  "description": "GitHub ActionsからHTTPS Webhookの接続テストを送信しました。",
+                  "score": 100,
+                  "badge": "接続テスト",
+                  "metrics": [
+                      {"label": "GitHub Actions", "percent": 100},
+                      {"label": "Webhook POST", "percent": 100}
+                  ]
+              }
+          }
+          path = Path(os.environ["RUNNER_TEMP"]) / "relay-webhook-payload.json"
+          path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+          PY
+
+      - name: Send webhook and verify HTTP 201
+        shell: bash
+        run: |
+          status=$(curl --silent --show-error --max-time 25 \
+            --output "$RUNNER_TEMP/relay-webhook-response.json" \
+            --write-out '%{http_code}' \
+            --request POST "$RELAY_URL" \
+            --header "Authorization: Bearer ${RELAY_WEBHOOK_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data-binary "@$RUNNER_TEMP/relay-webhook-payload.json")
+
+          echo "RelayHarbor HTTP status: $status"
+          if [[ "$status" != "201" ]]; then
+            case "$status" in
+              502)
+                detail="HTTP 502: The gateway cannot reach the Relay service. Check origin networking."
+                ;;
+              401)
+                detail="HTTP 401: The bearer token does not match the destination endpoint."
+                ;;
+              301|302|303|307|308)
+                detail="HTTP $status: Redirect detected. Check gateway access policy and hostname routing."
+                ;;
+              403)
+                detail="HTTP 403: Request blocked by upstream access policy or authorization."
+                ;;
+              422)
+                detail="HTTP 422: Webhook JSON rejected by RelayHarbor. Check payload schema."
+                ;;
+              000)
+                detail="No HTTP response: Check DNS, TLS, Tunnel availability and network connectivity."
+                ;;
+              *)
+                detail="HTTP $status: Expected 201 Created. Inspect gateway and relay container logs."
+                ;;
+            esac
+            echo "::error::$detail"
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "relay-webhook-response.json"
+          response = json.loads(path.read_text(encoding="utf-8"))
+          if not isinstance(response.get("sequence"), int):
+              raise RuntimeError("Invalid RelayHarbor response (missing sequence)")
+          if response.get("duplicate") is not False:
+              raise RuntimeError("Webhook event was not newly created")
+          print("Webhook accepted; event sequence={}".format(response["sequence"]))
+          PY
+
+          {
+            echo "### RelayHarbor Webhook test: success"
+            echo ""
+            echo "- Relay returned HTTP 201 Created."
+            echo "- Notification channel: \`GitHub Actions\` (or the channel specified at dispatch)."
+            echo "- Open RelayHarbor and use **Webhook通知を今すぐ同期** to fetch the card."
+          } >> "$GITHUB_STEP_SUMMARY"

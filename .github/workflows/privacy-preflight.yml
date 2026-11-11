@@ -1,0 +1,33 @@
+name: Public Release Privacy Preflight
+
+on:
+  push:
+    branches: [main, 'feat/**']
+    paths:
+      - '**'
+  pull_request:
+    paths:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  current-tree:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile preflight scanner
+        run: python3 -m py_compile scripts/privacy_preflight.py
+      - name: Check tracked files for sensitive paths, credentials and personal identifiers
+        run: python3 scripts/privacy_preflight.py
+      - name: Verify safe fresh-history public snapshot
+        shell: bash
+        run: |
+          if [[ -f scripts/prepare_public_snapshot.sh ]]; then
+            bash scripts/prepare_public_snapshot.sh "$RUNNER_TEMP/relayharbor-public-check"
+            test "$(git -C "$RUNNER_TEMP/relayharbor-public-check" rev-list --count HEAD)" = 1
+            test -z "$(git -C "$RUNNER_TEMP/relayharbor-public-check" remote)"
+          fi

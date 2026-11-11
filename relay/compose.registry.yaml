@@ -1,0 +1,31 @@
+# Production image deployment: reuse the existing Compose project (relay), network
+# (relay_default), runtime .env, and named volume (relay_relay_data).
+# Set RELAY_IMAGE to an immutable ghcr.io/...@sha256:<digest> reference.
+# Example: docker compose -p relay --env-file .deploy/active.env -f compose.registry.yaml up -d --no-deps relay
+services:
+  relay:
+    image: ${RELAY_IMAGE:?Set RELAY_IMAGE via the deployment script}
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8088:8000"
+    volumes:
+      - relay_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).read()"
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  relay_data:
