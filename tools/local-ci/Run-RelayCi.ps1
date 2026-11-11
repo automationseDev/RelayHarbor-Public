@@ -123,6 +123,9 @@ function Run-Pr {
             $work = Join-Path $State ("pr-" + $id + "-" + $short)
             $attached = $false
             try {
+                Invoke-GitChecked -Arguments @('fetch','origin','main','--prune')
+                $baseSha = (& git rev-parse origin/main).Trim()
+                Assert-Exit 'read current main SHA'
                 Send-Status $sha 'pending' "Windows local CI is building PR #$id"
                 Invoke-GitChecked -Arguments @('fetch','origin',"refs/pull/$id/head")
                 $fetched = (& git rev-parse FETCH_HEAD).Trim()
@@ -144,12 +147,22 @@ function Run-Pr {
                     $now.headRefOid -ne $sha) {
                     throw "PR changed or approval label removed while testing"
                 }
+                Invoke-GitChecked -Arguments @('fetch','origin','main')
+                if ((& git rev-parse origin/main).Trim() -ne $baseSha) {
+                    throw 'main advanced during CI. Retry PR against the latest main next cycle.'
+                }
                 Send-Status $sha 'success' "Windows local CI: Android and Relay tests passed"
                 if ($Merge) {
-                    # This does not bypass GitHub branch rules or required reviews.
-                    & gh pr merge "$id" -R $Repo --squash --delete-branch --match-head-commit $sha
-                    Assert-Exit "merge PR #$id"
-                    Write-Host "Merged PR #$id safely."
+                    # Merge permission/review rules can refuse even a successful build.
+                    # Keep the successful CI status rather than falsely marking test failure.
+                    try {
+                        & gh pr merge "$id" -R $Repo --squash --delete-branch --match-head-commit $sha
+                        Assert-Exit "merge PR #$id"
+                        Write-Host "Merged PR #$id safely."
+                    } catch {
+                        Write-Warning "CI passed, but GitHub refused merge: $($_.Exception.Message)"
+                        Write-Warning "Check required statuses/reviews. No branch protections were bypassed."
+                    }
                 } else { Write-Host "PR #$id passed; -Merge not supplied." }
             } catch {
                 $msg = $_.Exception.Message
@@ -216,6 +229,17 @@ function Run-Release([string]$Sdk) {
         if ($gradleFile -notmatch 'versionCode\s*=\s*(\d+)') { throw 'versionCode missing' }
         $code = [int]$Matches[1]
         if ($code -le 7) { throw 'Bump versionCode above 7 for the next release.' }
+        $maxCode = 7
+        foreach ($oldTag in @(& git tag -l 'v*')) {
+            if (-not $oldTag) { continue }
+            $tagGradle = (& git show "${oldTag}:app/build.gradle.kts" 2>$null | Out-String)
+            if ($LASTEXITCODE -eq 0 -and $tagGradle -match 'versionCode\s*=\s*(\d+)') {
+                $maxCode = [Math]::Max($maxCode, [int]$Matches[1])
+            }
+        }
+        if ($code -le $maxCode) {
+            throw "versionCode $code must be greater than the latest tagged versionCode $maxCode"
+        }
         $published = @(Invoke-GhJson -Arguments @('release','list','-R',$Repo,
             '--limit','100','--json','tagName'))
         if (@($published | Where-Object { $_.tagName -eq $tag }).Count -gt 0) {
