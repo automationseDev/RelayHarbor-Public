@@ -38,7 +38,7 @@ function Invoke-GhJson([string[]]$Arguments) {
     if (-not $text) { return $null }
     return ($text | ConvertFrom-Json)
 }
-function Git([string[]]$Arguments) {
+function Invoke-GitChecked([string[]]$Arguments) {
     & git @Arguments
     Assert-Exit ('git ' + ($Arguments -join ' '))
 }
@@ -109,7 +109,7 @@ function Require-Pr([object]$Pr) {
 function Run-Pr {
     Push-Location $Root
     try {
-        Git -Arguments @('fetch','origin','main','--prune')
+        Invoke-GitChecked -Arguments @('fetch','origin','main','--prune')
         $prs = @(Invoke-GhJson -Arguments @('pr','list','-R',$Repo,'--state','open',
             '--limit','100','--json',
             'number,headRefOid,headRefName,headRepositoryOwner,author,baseRefName,isDraft,isCrossRepository,labels'))
@@ -124,12 +124,12 @@ function Run-Pr {
             $attached = $false
             try {
                 Send-Status $sha 'pending' "Windows local CI is building PR #$id"
-                Git -Arguments @('fetch','origin',"refs/pull/$id/head")
+                Invoke-GitChecked -Arguments @('fetch','origin',"refs/pull/$id/head")
                 $fetched = (& git rev-parse FETCH_HEAD).Trim()
                 Assert-Exit 'git rev-parse FETCH_HEAD'
                 if ($fetched -ne $sha) { throw "PR head changed during fetch; retry next cycle" }
                 if (Test-Path $work) { throw "Old worktree remains: $work" }
-                Git -Arguments @('worktree','add','--detach',$work,$sha)
+                Invoke-GitChecked -Arguments @('worktree','add','--detach',$work,$sha)
                 $attached = $true
                 Push-Location $work
                 try {
@@ -201,12 +201,12 @@ function Get-SignerDigest([string]$Apk, [string]$Sdk) {
 function Run-Release([string]$Sdk) {
     Push-Location $Root
     try {
-        Git -Arguments @('switch','main')
+        Invoke-GitChecked -Arguments @('switch','main')
         if ((& git status --porcelain | Out-String).Trim()) {
             throw 'Working directory has local modifications. Release aborted.'
         }
-        Git -Arguments @('fetch','origin','main','--tags')
-        Git -Arguments @('pull','--ff-only','origin','main')
+        Invoke-GitChecked -Arguments @('fetch','origin','main','--tags')
+        Invoke-GitChecked -Arguments @('pull','--ff-only','origin','main')
         $gradleFile = Get-Content 'app/build.gradle.kts' -Raw
         if ($gradleFile -notmatch 'versionName\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"') {
             throw 'versionName is not a valid semantic version'
@@ -241,8 +241,8 @@ function Run-Release([string]$Sdk) {
             $output = Join-Path $State ("RelayHarbor-" + $tag + '.apk')
             Copy-Item $apk $output -Force
             # Dry-run never creates a GitHub release: the following are publish operations.
-            Git -Arguments @('tag','-a',$tag,'-m',"RelayHarbor $tag")
-            Git -Arguments @('push','origin',"refs/tags/$tag")
+            Invoke-GitChecked -Arguments @('tag','-a',$tag,'-m',"RelayHarbor $tag")
+            Invoke-GitChecked -Arguments @('push','origin',"refs/tags/$tag")
             & gh release create $tag $output -R $Repo --verify-tag --title "RelayHarbor $tag" --generate-notes
             Assert-Exit "publish release $tag"
             Write-Host "Published $tag. Existing app can update in-place."
