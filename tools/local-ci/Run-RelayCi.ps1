@@ -216,8 +216,11 @@ function Run-Release([string]$Sdk) {
         if ($gradleFile -notmatch 'versionCode\s*=\s*(\d+)') { throw 'versionCode missing' }
         $code = [int]$Matches[1]
         if ($code -le 7) { throw 'Bump versionCode above 7 for the next release.' }
-        $already = & gh release view $tag -R $Repo --json tagName 2>$null
-        if ($LASTEXITCODE -eq 0) { throw "$tag release already exists" }
+        $published = @(Invoke-GhJson -Arguments @('release','list','-R',$Repo,
+            '--limit','100','--json','tagName'))
+        if (@($published | Where-Object { $_.tagName -eq $tag }).Count -gt 0) {
+            throw "$tag release already exists"
+        }
         $existingTag = (& git tag -l $tag | Out-String).Trim()
         if ($existingTag) { throw "$tag git tag already exists" }
         Read-SigningConfig
