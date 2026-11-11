@@ -1,13 +1,6 @@
 name: Publish Relay Docker Image (GHCR)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'relay/**'
-      - '.github/workflows/relay-image.yml'
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       channel:
