@@ -277,6 +277,11 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     syncStatus = syncStatus,
                     syncAvailable = settings.mode != "local" && tokenConfigured &&
                         net.automationse.relayharbor.integration.RelayClient.validEndpoint(settings.endpoint),
+                    foregroundSyncSeconds = foregroundSyncSeconds,
+                    onForegroundSyncSecondsChange = { seconds ->
+                        foregroundSyncSeconds = seconds
+                        uiStore.saveForegroundSyncSeconds(seconds)
+                    },
                     onSync = vm::syncNow
                 )
                 "channels" -> ChannelListScreen(
@@ -436,6 +441,8 @@ private fun HomeScreen(
     onShowChannelsChange: (Boolean) -> Unit,
     syncStatus: String,
     syncAvailable: Boolean,
+    foregroundSyncSeconds: Int,
+    onForegroundSyncSecondsChange: (Int) -> Unit,
     onSync: () -> Unit
 ) {
     var appDrawerOpen by rememberSaveable { mutableStateOf(false) }
@@ -511,6 +518,21 @@ private fun HomeScreen(
                     overflow = TextOverflow.Ellipsis
                 )
                 TextButton(onClick = onSync, enabled = syncAvailable) { Text("今すぐ同期") }
+            }
+            Text(
+                "表示中の同期間隔",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                listOf(30 to "30秒", 60 to "1分", 120 to "2分", 300 to "5分")
+                    .forEach { (seconds, label) ->
+                        FilterChip(
+                            selected = foregroundSyncSeconds == seconds,
+                            onClick = { onForegroundSyncSecondsChange(seconds) },
+                            label = { Text(label) }
+                        )
+                    }
             }
 
             if (showActivity) {
