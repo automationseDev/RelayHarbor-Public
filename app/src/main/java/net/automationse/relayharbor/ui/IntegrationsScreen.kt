@@ -2,6 +2,8 @@ package net.automationse.relayharbor.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +15,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -34,6 +40,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -43,6 +51,8 @@ import net.automationse.relayharbor.integration.IntegrationConnection
 import net.automationse.relayharbor.integration.IntegrationCredential
 import java.text.DateFormat
 import java.util.Date
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,6 +98,7 @@ fun IntegrationsScreen(
     var connectionType by rememberSaveable {
         mutableStateOf(uiStore.integrationListFilter())
     }
+    var cardMode by rememberSaveable { mutableStateOf(uiStore.integrationCardLayout()) }
     val visibleConnections = connections.filter { connection ->
         (connectionQuery.isBlank() ||
             connection.name.contains(connectionQuery, ignoreCase = true) ||
@@ -183,6 +194,33 @@ fun IntegrationsScreen(
                     )
                 }
             }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "カードの大きさ",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChip(
+                    selected = cardMode == "normal",
+                    onClick = {
+                        cardMode = "normal"
+                        uiStore.saveIntegrationCardLayout("normal")
+                    },
+                    label = { Text("通常") }
+                )
+                FilterChip(
+                    selected = cardMode == "compact",
+                    onClick = {
+                        cardMode = "compact"
+                        uiStore.saveIntegrationCardLayout("compact")
+                    },
+                    label = { Text("小さく") }
+                )
+            }
             Text(
                 "表示 ${visibleConnections.size} / ${connections.size} 件",
                 style = MaterialTheme.typography.labelMedium,
@@ -194,6 +232,97 @@ fun IntegrationsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             visibleConnections.forEach { connection ->
+                if (cardMode == "compact") {
+                    var menuOpen by remember(connection.id) { mutableStateOf(false) }
+                    Card(Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(
+                                horizontal = 12.dp, vertical = 6.dp
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    connection.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    "${if (connection.provider == "rss") "RSS" else if (connection.provider == "github_actions") "GitHub" else "Webhook"} · #${connection.channelName}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (connection.lastError.isNotBlank()) {
+                                    Text(
+                                        "取得エラーあり",
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = connection.enabled,
+                                onCheckedChange = { onEdit(connection.copy(enabled = it)) }
+                            )
+                            Box {
+                                IconButton(onClick = { menuOpen = true }) {
+                                    Icon(
+                                        Icons.Default.MoreVert,
+                                        contentDescription = "${connection.name} の操作"
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = menuOpen,
+                                    onDismissRequest = { menuOpen = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("編集・詳細") },
+                                        onClick = { menuOpen = false; editing = connection }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("URLをコピー") },
+                                        onClick = {
+                                            menuOpen = false
+                                            val url = if (connection.provider == "rss")
+                                                connection.feedUrl
+                                            else baseUrl + connection.path
+                                            clipboard.setText(AnnotatedString(url))
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                if (connection.provider == "rss") "今すぐ取得"
+                                                else "テスト通知"
+                                            )
+                                        },
+                                        enabled = connection.enabled,
+                                        onClick = {
+                                            menuOpen = false
+                                            if (connection.provider == "rss") onRefreshFeed(connection.id)
+                                            else onTest(connection.id)
+                                        }
+                                    )
+                                    if (connection.provider != "rss") {
+                                        DropdownMenuItem(
+                                            text = { Text("鍵更新") },
+                                            onClick = { menuOpen = false; rotating = connection }
+                                        )
+                                    }
+                                    DropdownMenuItem(
+                                        text = { Text("削除") },
+                                        onClick = { menuOpen = false; deleting = connection }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -253,6 +382,7 @@ fun IntegrationsScreen(
                             TextButton(onClick = { deleting = connection }) { Text("削除") }
                         }
                     }
+                }
                 }
             }
             HorizontalDivider()
