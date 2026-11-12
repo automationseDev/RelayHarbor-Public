@@ -5,7 +5,7 @@ on:
       tag:
         description: 'GitHub release tag (e.g. v0.5.2)'
         required: true
-        default: 'v0.5.2'
+        default: 'v0.5.3'
 permissions:
   contents: write
 jobs:
@@ -13,10 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use a workflow on main but build the exact EXISTING release tag.
+          ref: ${{ inputs.tag }}
       - name: Verify public upgrade identity and release version
         shell: bash
         env:
           EXPECTED_TAG: ${{ inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python3 scripts/check_public_contract.py
@@ -24,9 +29,27 @@ jobs:
           [[ "$EXPECTED_TAG" == "v$version" ]] || {
             echo "::error::Tag must match Android version v$version"; exit 1;
           }
-          if [[ "$GITHUB_REF" != "refs/heads/main" &&
-                "$GITHUB_REF" != "refs/tags/v$version" ]]; then
-            echo "::error::Release must run on main or the matching version tag"; exit 1;
+          [[ "$EXPECTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo '::error::Tag name must be vX.Y.Z'; exit 1;
+          }
+          # The signed release must come from the EXISTING matching Git tag,
+          # not an unrelated main commit or an arbitrary workflow input.
+          git fetch --tags --force origin
+          tagged_commit=$(git rev-parse --verify "refs/tags/$EXPECTED_TAG^{commit}")
+          [[ "$tagged_commit" == "$(git rev-parse HEAD)" ]] || {
+            echo "::error::Checked-out source does not match the requested release tag"; exit 1;
+          }
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$tagged_commit" refs/remotes/origin/main || {
+            echo '::error::Release tag must point to a commit already in main'; exit 1;
+          }
+          code=$(sed -n 's/^[[:space:]]*versionCode = \([0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)
+          [[ "$code" =~ ^[0-9]+$ && "$code" -gt 7 ]] || {
+            echo '::error::Production versionCode must be greater than 7'; exit 1;
+          }
+          # Never modify an already published release or its APK.
+          if gh release view "$EXPECTED_TAG" >/dev/null 2>&1; then
+            echo '::error::This release already exists; refusing to overwrite.'; exit 1;
           fi
       - name: Check signing secrets
         shell: bash
@@ -72,7 +95,37 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk "dist/RelayHarbor-v$VERSION.apk"
           APKSIGNER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -type f -name apksigner | sort -V | tail -n 1)
           test -n "$APKSIGNER"
-          "$APKSIGNER" verify "dist/RelayHarbor-v$VERSION.apk"
+          APK="dist/RelayHarbor-v$VERSION.apk"
+          "$APKSIGNER" verify "$APK"
+          AAPT=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          test -x "$AAPT"
+          "$AAPT" dump permissions "$APK" > "$RUNNER_TEMP/release-permissions.txt"
+          if grep -Fq 'android.permission.REQUEST_INSTALL_PACKAGES' "$RUNNER_TEMP/release-permissions.txt"; then
+            echo '::error::Production APK unexpectedly requests REQUEST_INSTALL_PACKAGES'
+            exit 1
+          fi
+          # Check the actual signing certificate against the published 0.5.2.
+          # This protects the user's installed v0.5.0 data during upgrades.
+          BASE="$RUNNER_TEMP/RelayHarbor-v0.5.2.apk"
+          curl -fsSL --retry 3 --max-time 120 \
+            -o "$BASE" \
+            'https://github.com/automationseDev/RelayHarbor-Public/releases/download/v0.5.2/RelayHarbor-v0.5.2.apk'
+          previous=$(
+            "$APKSIGNER" verify --print-certs "$BASE" |
+              sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
+              tr '[:upper:]' '[:lower:]' | tr -d ':'
+          )
+          current=$(
+            "$APKSIGNER" verify --print-certs "$APK" |
+              sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
+              tr '[:upper:]' '[:lower:]' | tr -d ':'
+          )
+          [[ "$previous" =~ ^[0-9a-f]{64}$ && "$current" == "$previous" ]] || {
+            echo '::error::Signing certificate mismatch; blocking release.'
+            exit 1
+          }
+          (cd dist && sha256sum "RelayHarbor-v$VERSION.apk" > "RelayHarbor-v$VERSION.apk.sha256")
+          echo 'Production signing certificate matches v0.5.2.'
       - name: Upload signed artifact
         uses: actions/upload-artifact@v4
         with:
@@ -82,6 +135,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
-          target_commitish: ${{ github.sha }}
-          files: dist/*.apk
+          files: dist/*
+          fail_on_unmatched_files: true
           generate_release_notes: true
