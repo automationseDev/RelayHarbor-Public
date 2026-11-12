@@ -73,6 +73,10 @@ fun SettingsScreen(
     val notificationPrefs = remember(context) { NotificationPreferences(context) }
     var notificationsEnabled by remember { mutableStateOf(notificationPrefs.enabled()) }
     var backgroundEnabled by remember { mutableStateOf(notificationPrefs.backgroundEnabled()) }
+    val uiStore = remember(context) { WorkspaceUiStore(context) }
+    var showRemoteThumbnails by remember {
+        mutableStateOf(uiStore.showRemoteThumbnails())
+    }
     var notificationPermission by remember {
         mutableStateOf(MessageNotifications.hasPermission(context))
     }
@@ -291,6 +295,28 @@ fun SettingsScreen(
                             onCheckedChange = onShowHomeChannelsChange
                         )
                     }
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("チャットカードのサムネイルを表示")
+                            Text(
+                                "画像URLがある場合にHTTPSで取得します。通信量を節約したい場合や外部画像を読み込みたくない場合はオフにできます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = showRemoteThumbnails,
+                            onCheckedChange = {
+                                showRemoteThumbnails = it
+                                uiStore.saveShowRemoteThumbnails(it)
+                            }
+                        )
+                    }
                     Text(
                         "アプリの配置・検索条件・表示切替も端末内に保存されます。アカウントや認証情報には影響しません。",
                         style = MaterialTheme.typography.bodySmall,
@@ -303,7 +329,7 @@ fun SettingsScreen(
                     Text("RelayHarbor v" + AppUpdater.installedVersion(context), fontWeight = FontWeight.SemiBold)
                     Text("AIのAPIキーはアプリではなく中継サーバーの環境変数で管理します。チャットでの送信時に選択したAIへ接続します。",
                         style = MaterialTheme.typography.bodySmall)
-                    Text("Webhook通知はサーバーに保存され、アプリ使用中は約30秒ごとに取得します。バックグラウンドは15分以上の定期同期を利用できます。",
+                    Text("Webhook通知はサーバーに保存され、アプリ表示中は選択した同期間隔（${foregroundSyncSeconds}秒）で取得します。バックグラウンドは15分以上の定期同期を利用できます。",
                         style = MaterialTheme.typography.bodySmall)
                     Text(syncStatus, style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary)

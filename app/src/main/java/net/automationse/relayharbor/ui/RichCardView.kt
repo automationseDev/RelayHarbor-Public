@@ -43,6 +43,14 @@ fun RichCardView(card: RichCard) {
         shape = RoundedCornerShape(18.dp)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Media is loaded only for currently visible cards; users can disable
+            // external image requests under Settings for privacy/data savings.
+            val showMedia = remember(context) {
+                WorkspaceUiStore(context).showRemoteThumbnails()
+            }
+            if (showMedia) {
+                card.thumbnailUrl?.let { CardThumbnail(it, card.title) }
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(card.title, fontWeight = FontWeight.Bold,

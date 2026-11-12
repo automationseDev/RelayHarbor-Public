@@ -13,6 +13,7 @@ import time
 import uuid
 
 import rss
+import image_metadata
 import slack_adapter
 from typing import Literal
 
@@ -278,7 +279,9 @@ async def inbound(
             decoded = json.loads(raw)
             if not isinstance(decoded, dict):
                 raise ValueError("JSON object required")
-            normalized = slack_adapter.normalize_slack_payload(decoded)
+            normalized = image_metadata.enrich_webhook_thumbnail(
+                slack_adapter.normalize_slack_payload(decoded)
+            )
             payload = server.WebhookMessage.model_validate(normalized)
         except Exception:
             raise HTTPException(status_code=422, detail="Invalid webhook payload") from None

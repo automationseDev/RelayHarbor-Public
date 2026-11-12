@@ -65,3 +65,49 @@ def test_blocks_without_text_and_oversized_payload_rejected(client):
     assert client.post(connection["path"], headers=auth,
                        json={"blocks": [{"type": "section", "text": {
                            "text": "X" * 70000}}]}).status_code == 413
+
+
+def test_slack_image_block_and_webhook_top_level_image_are_displayable(client):
+    connection = client.post("/v1/connections", headers=CLIENT, json={
+        "name": "Scout", "provider": "webhook", "channel_name": "Jobs"
+    }).json()
+    auth = {"Authorization": "Bearer " + connection["token"]}
+    payload = {
+        "id": "img-block-1", "text": "写真あり",
+        "blocks": [
+            {"type": "header", "text": {"text": "案件画像"}},
+            {"type": "image", "image_url": "https://cdn.example.com/job-cover.jpg",
+             "alt_text": "Job cover"}
+        ]
+    }
+    assert client.post(connection["path"], headers=auth, json=payload).status_code == 201
+    payload2 = {
+        "id": "img-flat-2", "sender": "Scout",
+        "text": "2件目", "thumbnail_url": "https://cdn.example.com/two.webp"
+    }
+    assert client.post(connection["path"], headers=auth, json=payload2).status_code == 201
+    payload3 = {
+        "id": "img-nested-3", "sender": "Scout",
+        "text": "3件目", "card": {
+            "title": "既存カード", "image_url": "https://cdn.example.com/three.png"
+        }
+    }
+    assert client.post(connection["path"], headers=auth, json=payload3).status_code == 201
+
+    events = client.get("/v1/events", headers=CLIENT).json()["events"]
+    assert len(events) == 3
+    assert events[0]["card"]["thumbnail_url"] == "https://cdn.example.com/job-cover.jpg"
+    assert events[1]["card"]["thumbnail_url"] == "https://cdn.example.com/two.webp"
+    assert events[2]["card"]["image_url"] == "https://cdn.example.com/three.png"
+
+
+def test_image_metadata_rejects_private_targets_before_sending_to_android(client):
+    connection = client.post("/v1/connections", headers=CLIENT, json={
+        "name": "Scout", "channel_name": "Images"
+    }).json()
+    auth = {"Authorization": "Bearer " + connection["token"]}
+    assert client.post(connection["path"], headers=auth, json={
+        "text": "Plain text", "image_url": "http://127.0.0.1/secret"
+    }).status_code == 201
+    events = client.get("/v1/events", headers=CLIENT).json()["events"]
+    assert events[0]["card"] is None

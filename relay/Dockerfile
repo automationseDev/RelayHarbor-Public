@@ -4,7 +4,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY server.py connections.py connection_transfer.py slack_adapter.py rss.py .
+COPY server.py connections.py connection_transfer.py slack_adapter.py image_metadata.py rss.py .
 RUN useradd -r -u 10001 relay && mkdir -p /data && chown relay:relay /data
 USER relay
 EXPOSE 8000

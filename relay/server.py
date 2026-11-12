@@ -20,6 +20,7 @@ import httpx
 import connections
 import connection_transfer
 import rss
+import image_metadata
 from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -133,7 +134,10 @@ async def receive_webhook(
     if len(raw) > 65536:
         raise HTTPException(status_code=413, detail="Webhook too large")
     try:
-        payload = WebhookMessage.model_validate_json(raw)
+        decoded = json.loads(raw)
+        payload = WebhookMessage.model_validate(
+            image_metadata.enrich_webhook_thumbnail(decoded)
+        )
     except Exception:
         raise HTTPException(status_code=422, detail="Invalid webhook payload") from None
     if not payload.text.strip() and not payload.card:
