@@ -27,9 +27,13 @@ Add these repository Actions secrets in Settings -> Secrets and variables -> Act
 Bump `versionCode` monotonically for every new production release and update
 `versionName` through a PR. Wait for **Android CI, Relay API Tests and Privacy
 Preflight** to pass, then merge the PR into `main`. You no longer need to make
-a Git tag locally.
+a Git tag locally. When the merged PR changes `app/build.gradle.kts`, the
+**Signed APK Release** workflow starts automatically on the main push. This
+workflow re-runs production tests and signing checks before tagging or publishing.
+Ordinary code-only main pushes do not trigger a release.
 
-Open **Actions → Signed APK Release → Run workflow**, select `main` and
+For a manual retry or an intentionally manual release, open
+**Actions → Signed APK Release → Run workflow**, select `main` and
 leave the optional `tag` field blank. The workflow derives the tag from
 `app/build.gradle.kts` (for example `versionName = "0.5.4"` becomes
 `v0.5.4`). Alternatively, from PowerShell:
