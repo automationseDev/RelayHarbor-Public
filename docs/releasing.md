@@ -24,21 +24,38 @@ Add these repository Actions secrets in Settings -> Secrets and variables -> Act
 - KEY_ALIAS (relayharbor)
 - KEY_PASSWORD
 
-Bump `versionCode` monotonically for every new production release, and update `versionName`.
-Create and push an annotated tag matching the version, e.g. `v0.5.3`, **after**
-CI succeeds and the change is merged to `main`. The production release is
-**manual**, never automatic on a PR or a tag push. Run the workflow on `main` with the existing tag as input.
-The workflow checks out and signs that tag's commit:
+Bump `versionCode` monotonically for every new production release and update
+`versionName` through a PR. Wait for **Android CI, Relay API Tests and Privacy
+Preflight** to pass, then merge the PR into `main`. You no longer need to make
+a Git tag locally.
+
+Open **Actions → Signed APK Release → Run workflow**, select `main` and
+leave the optional `tag` field blank. The workflow derives the tag from
+`app/build.gradle.kts` (for example `versionName = "0.5.4"` becomes
+`v0.5.4`). Alternatively, from PowerShell:
 
 ```powershell
-gh workflow run release.yml -R automationseDev/RelayHarbor-Public --ref main -f tag=v0.5.3
+gh workflow run release.yml -R automationseDev/RelayHarbor-Public --ref main
 ```
 
-This uses the four existing GitHub Actions signing secrets; it tests the release,
-verifies the compiled APK does not request package-install permission, verifies
-the signing certificate matches the published v0.5.2 APK, and publishes the
-signed APK + SHA-256 checksum to GitHub Releases. Never use the Debug APK as a
-production install or create a new JKS for an upgrade.
+The workflow builds and tests the production APK **before creating a tag**.
+It validates the compiled application ID and version, verifies that
+`REQUEST_INSTALL_PACKAGES` is absent, compares the signing certificate with
+v0.5.2 and requires `versionCode` to exceed the latest published APK.
+Only after these checks does it create an annotated tag with the GitHub Actions
+bot's noreply identity and publish the signed APK + SHA-256 checksum.
+Existing tags are never moved, and existing GitHub Releases are never overwritten.
+
+If tag creation succeeded but publication failed, rerun the same workflow on
+`main` with the **existing tag** in the optional input (even if main's
+`versionName` has advanced). It can resume from the tagged commit only if
+the tag belongs to merged `main` history, the release does not already exist,
+and all release checks still pass. A previously published release cannot be
+replaced by retrying this workflow.
+
+The four original signing secrets are required and must not be deleted.
+Never distribute Debug APK as production, regenerate the production keystore
+or remove the original signing credentials merely to ship an upgrade.
 
 Important: Do not distribute the debug APK as the production app. Do not regenerate
 the release key on future updates. If using Google Play App Signing, follow Play's upload

@@ -1,57 +1,98 @@
 name: Signed APK Release
+
+# One-click manual release. Version is read from the merged Android Gradle config.
+# A tag is created only AFTER APK build, tests and safety checks succeed.
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'GitHub release tag (e.g. v0.5.2)'
-        required: true
-        default: 'v0.5.3'
+        description: 'Optional tag (leave blank to use v<versionName> from Gradle)'
+        required: false
+        default: ''
+
 permissions:
   contents: write
+
+# Avoid two releases competing to create the same tag or assets.
+concurrency:
+  group: relayharbor-signed-apk-release
+  cancel-in-progress: false
+
 jobs:
   release:
+    if: github.repository == 'automationseDev/RelayHarbor-Public' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out merged main
+        uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
-          # Use a workflow on main but build the exact EXISTING release tag.
-          ref: ${{ inputs.tag }}
-      - name: Verify public upgrade identity and release version
+
+      - name: Validate release source and resolve optional existing tag
+        id: candidate
         shell: bash
         env:
-          EXPECTED_TAG: ${{ inputs.tag || github.ref_name }}
+          REQUESTED_TAG: ${{ inputs.tag }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 scripts/check_public_contract.py
-          version=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)
-          [[ "$EXPECTED_TAG" == "v$version" ]] || {
-            echo "::error::Tag must match Android version v$version"; exit 1;
-          }
-          [[ "$EXPECTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-            echo '::error::Tag name must be vX.Y.Z'; exit 1;
-          }
-          # The signed release must come from the EXISTING matching Git tag,
-          # not an unrelated main commit or an arbitrary workflow input.
-          git fetch --tags --force origin
-          tagged_commit=$(git rev-parse --verify "refs/tags/$EXPECTED_TAG^{commit}")
-          [[ "$tagged_commit" == "$(git rev-parse HEAD)" ]] || {
-            echo "::error::Checked-out source does not match the requested release tag"; exit 1;
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+            echo '::error::Release must be started on main'; exit 1;
           }
           git fetch --no-tags origin main
-          git merge-base --is-ancestor "$tagged_commit" refs/remotes/origin/main || {
-            echo '::error::Release tag must point to a commit already in main'; exit 1;
+          initial_sha="$(git rev-parse HEAD)"
+          remote_main="$(git rev-parse refs/remotes/origin/main)"
+          [[ "$initial_sha" == "$remote_main" ]] || {
+            echo '::error::main advanced during checkout; retry from main'; exit 1;
           }
-          code=$(sed -n 's/^[[:space:]]*versionCode = \([0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)
-          [[ "$code" =~ ^[0-9]+$ && "$code" -gt 7 ]] || {
-            echo '::error::Production versionCode must be greater than 7'; exit 1;
+
+          # If an earlier attempt created a tag but failed to publish,
+          # safely resume from that immutable tag (never move/overwrite it).
+          gradle_version="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
+          [[ "$gradle_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo '::error::Invalid Android versionName'; exit 1;
           }
-          # Never modify an already published release or its APK.
-          if gh release view "$EXPECTED_TAG" >/dev/null 2>&1; then
-            echo '::error::This release already exists; refusing to overwrite.'; exit 1;
+          tag="${REQUESTED_TAG:-v$gradle_version}"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo '::error::Tag format must be vX.Y.Z'; exit 1;
+          }
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo '::error::A release for this tag already exists; refusing to overwrite.'; exit 1;
           fi
-      - name: Check signing secrets
+
+          exists=false
+          release_sha="$initial_sha"
+          if git ls-remote --exit-code --refs --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            exists=true
+            git fetch --no-tags origin "refs/tags/$tag:refs/tags/$tag"
+            release_sha="$(git rev-parse --verify "refs/tags/$tag^{commit}")"
+            git merge-base --is-ancestor "$release_sha" "$remote_main" || {
+              echo '::error::Existing tag is not on main; refusing release.'; exit 1;
+            }
+            git checkout --detach "$release_sha"
+          elif [[ "$tag" != "v$gradle_version" ]]; then
+            echo "::error::New tag must match current main version v$gradle_version"; exit 1;
+          fi
+
+          python3 scripts/check_public_contract.py
+          version="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
+          code="$(sed -n 's/^[[:space:]]*versionCode = \([0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)"
+          [[ "$tag" == "v$version" && "$code" =~ ^[0-9]+$ ]] || {
+            echo '::error::Tag and Android version do not match.'; exit 1;
+          }
+
+          {
+            echo "tag=$tag"
+            echo "sha=$release_sha"
+            echo "version=$version"
+            echo "code=$code"
+            echo "tag_exists=$exists"
+          } >> "$GITHUB_OUTPUT"
+          echo "Validated source $release_sha for $tag (code $code)."
+
+      - name: Check persistent production signing secrets
         shell: bash
         env:
           KS: ${{ secrets.KEYSTORE_BASE64 }}
@@ -59,82 +100,164 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASS: ${{ secrets.KEY_PASSWORD }}
         run: |
-          test -n "$KS" && test -n "$STORE_PASS" && test -n "$KEY_ALIAS" && test -n "$KEY_PASS" || {
-            echo "::error::Set KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD before releasing."
-            exit 1
-          }
+          for name in KS STORE_PASS KEY_ALIAS KEY_PASS; do
+            [[ -n "${!name:-}" ]] || {
+              echo "::error::Missing required signing secret mapping: $name"; exit 1;
+            }
+          done
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - run: |
-          SDKMANAGER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools" -type f -name sdkmanager | head -n 1)
-          test -n "$SDKMANAGER"
-          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
-      - name: Decode persistent signing key
+
+      - name: Install required Android SDK components
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -x "$sdkmanager"
+          "$sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Decode original signing key (runner-only)
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
+          set -euo pipefail
+          umask 077
           printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/relayharbor-release.jks"
-          chmod 600 "$RUNNER_TEMP/relayharbor-release.jks"
-      - name: Build signed APK
+
+      - name: Build and test signed release APK
         shell: bash
         env:
           RELAYHARBOR_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           RELAYHARBOR_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           RELAYHARBOR_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          VERSION: ${{ steps.candidate.outputs.version }}
         run: |
+          set -euo pipefail
           export RELAYHARBOR_KEYSTORE_PATH="$RUNNER_TEMP/relayharbor-release.jks"
           gradle --no-daemon :app:assembleRelease :app:testReleaseUnitTest
           mkdir -p dist
-          VERSION=$(grep -m 1 'versionName = ' app/build.gradle.kts | cut -d '"' -f 2)
           cp app/build/outputs/apk/release/app-release.apk "dist/RelayHarbor-v$VERSION.apk"
-          APKSIGNER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -type f -name apksigner | sort -V | tail -n 1)
-          test -n "$APKSIGNER"
-          APK="dist/RelayHarbor-v$VERSION.apk"
-          "$APKSIGNER" verify "$APK"
-          AAPT=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -type f -name aapt | sort -V | tail -n 1)
-          test -x "$AAPT"
-          "$AAPT" dump permissions "$APK" > "$RUNNER_TEMP/release-permissions.txt"
-          if grep -Fq 'android.permission.REQUEST_INSTALL_PACKAGES' "$RUNNER_TEMP/release-permissions.txt"; then
-            echo '::error::Production APK unexpectedly requests REQUEST_INSTALL_PACKAGES'
-            exit 1
-          fi
-          # Check the actual signing certificate against the published 0.5.2.
-          # This protects the user's installed v0.5.0 data during upgrades.
-          BASE="$RUNNER_TEMP/RelayHarbor-v0.5.2.apk"
-          curl -fsSL --retry 3 --max-time 120 \
-            -o "$BASE" \
-            'https://github.com/automationseDev/RelayHarbor-Public/releases/download/v0.5.2/RelayHarbor-v0.5.2.apk'
-          previous=$(
-            "$APKSIGNER" verify --print-certs "$BASE" |
-              sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
-              tr '[:upper:]' '[:lower:]' | tr -d ':'
-          )
-          current=$(
-            "$APKSIGNER" verify --print-certs "$APK" |
-              sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
-              tr '[:upper:]' '[:lower:]' | tr -d ':'
-          )
-          [[ "$previous" =~ ^[0-9a-f]{64}$ && "$current" == "$previous" ]] || {
-            echo '::error::Signing certificate mismatch; blocking release.'
-            exit 1
+
+      - name: Verify compiled identity, upgrade version, signing and permissions
+        shell: bash
+        env:
+          VERSION: ${{ steps.candidate.outputs.version }}
+          CODE: ${{ steps.candidate.outputs.code }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          apk="dist/RelayHarbor-v$VERSION.apk"
+          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools"
+          apksigner="$(find "$sdk" -type f -name apksigner | sort -V | tail -n 1)"
+          aapt="$(find "$sdk" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$apksigner"
+          test -x "$aapt"
+          "$apksigner" verify "$apk"
+
+          badging="$("$aapt" dump badging "$apk")"
+          package_name="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<< "$badging" | head -n 1)"
+          apk_code="$(sed -n "s/^package: .*versionCode='\([0-9]*\)'.*/\1/p" <<< "$badging" | head -n 1)"
+          apk_version="$(sed -n "s/^package: .*versionName='\([^']*\)'.*/\1/p" <<< "$badging" | head -n 1)"
+          [[ "$package_name" == "net.automationse.relayharbor" &&
+             "$apk_code" == "$CODE" &&
+             "$apk_version" == "$VERSION" ]] || {
+            echo '::error::APK package/version does not match merged Gradle configuration.'; exit 1;
           }
+
+          "$aapt" dump permissions "$apk" > "$RUNNER_TEMP/release-permissions.txt"
+          if grep -Fq 'android.permission.REQUEST_INSTALL_PACKAGES' "$RUNNER_TEMP/release-permissions.txt"; then
+            echo '::error::Production APK requests forbidden self-install permission.'; exit 1;
+          fi
+
+          # v0.5.2 is the published signing baseline from the public migration.
+          baseline="$RUNNER_TEMP/RelayHarbor-v0.5.2.apk"
+          gh release download v0.5.2 -p 'RelayHarbor-v0.5.2.apk' -D "$RUNNER_TEMP"
+          "$apksigner" verify "$baseline"
+          previous_cert="$("$apksigner" verify --print-certs "$baseline" |
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
+            tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          current_cert="$("$apksigner" verify --print-certs "$apk" |
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
+            tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          [[ "$previous_cert" =~ ^[0-9a-f]{64}$ &&
+             "$current_cert" == "$previous_cert" ]] || {
+            echo '::error::Production certificate differs from v0.5.2; release blocked.'; exit 1;
+          }
+
+          # Compare against the actual latest published production versionCode.
+          latest_tag="$(gh release view --json tagName --jq '.tagName')"
+          [[ "$latest_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo '::error::Unable to resolve last production release.'; exit 1;
+          }
+          latest_apk="$RUNNER_TEMP/RelayHarbor-$latest_tag.apk"
+          if [[ "$latest_tag" != "v0.5.2" ]]; then
+            gh release download "$latest_tag" -p "RelayHarbor-$latest_tag.apk" -D "$RUNNER_TEMP"
+          fi
+          if [[ "$latest_tag" == "v0.5.2" ]]; then
+            latest_apk="$baseline"
+          fi
+          "$apksigner" verify "$latest_apk"
+          latest_badging="$("$aapt" dump badging "$latest_apk")"
+          latest_code="$(sed -n "s/^package: .*versionCode='\([0-9]*\)'.*/\1/p" <<< "$latest_badging" | head -n 1)"
+          [[ "$latest_code" =~ ^[0-9]+$ &&
+             "$CODE" -gt "$latest_code" ]] || {
+            echo "::error::versionCode $CODE must exceed last published $latest_code."; exit 1;
+          }
+
           (cd dist && sha256sum "RelayHarbor-v$VERSION.apk" > "RelayHarbor-v$VERSION.apk.sha256")
-          echo 'Production signing certificate matches v0.5.2.'
+          echo "APK identity, signing, permissions and versionCode verified."
+
       - name: Upload signed artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RelayHarbor-signed-apk
+          name: RelayHarbor-signed-apk-${{ steps.candidate.outputs.tag }}
           path: dist/*.apk
+          if-no-files-found: error
+
+      - name: Create release tag if absent (no overwrite)
+        shell: bash
+        env:
+          TAG: ${{ steps.candidate.outputs.tag }}
+          RELEASE_SHA: ${{ steps.candidate.outputs.sha }}
+          TAG_EXISTS: ${{ steps.candidate.outputs.tag_exists }}
+        run: |
+          set -euo pipefail
+          if [[ "$TAG_EXISTS" == "true" ]]; then
+            remote_tag="$(git ls-remote --tags origin "refs/tags/$TAG^{}" | awk '{print $1}')"
+            if [[ -z "$remote_tag" ]]; then
+              # Lightweight tags have no peeled ^{} line.
+              remote_tag="$(git ls-remote --tags --refs origin "refs/tags/$TAG" | awk '{print $1}')"
+            fi
+            [[ "$remote_tag" == "$RELEASE_SHA" ]] || {
+              echo '::error::Existing tag changed; refusing to publish.'; exit 1;
+            }
+            echo "Reusing existing immutable tag $TAG after a failed release attempt."
+          else
+            current_main="$(git ls-remote --heads origin main | awk '{print $1}')"
+            [[ "$current_main" == "$RELEASE_SHA" ]] || {
+              echo '::error::main changed during build; restart release on current main.'; exit 1;
+            }
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag -a "$TAG" "$RELEASE_SHA" -m "RelayHarbor $TAG"
+            git push origin "refs/tags/$TAG"
+            echo "Created signed release source tag $TAG."
+          fi
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ steps.candidate.outputs.tag }}
+          target_commitish: ${{ steps.candidate.outputs.sha }}
           files: dist/*
           fail_on_unmatched_files: true
           generate_release_notes: true
+          make_latest: true
