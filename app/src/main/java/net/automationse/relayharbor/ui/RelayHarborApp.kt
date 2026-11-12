@@ -74,7 +74,9 @@ import net.automationse.relayharbor.data.MessageEntity
 fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     var page by rememberSaveable { mutableStateOf("home") }
     var previousPage by rememberSaveable { mutableStateOf("channels") }
-    var showCreate by remember { mutableStateOf(false) }
+    var showCreate by rememberSaveable { mutableStateOf(false) }
+    var channelQuery by rememberSaveable { mutableStateOf("") }
+    var channelFilter by rememberSaveable { mutableStateOf("all") }
     val channels by vm.channels.collectAsState()
     val summaries by vm.channelSummaries.collectAsState()
     val activity by vm.activity.collectAsState()
@@ -170,6 +172,10 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                 "channels" -> ChannelListScreen(
                     channels = channels,
                     summaries = summaryById,
+                    query = channelQuery,
+                    onQueryChange = { channelQuery = it },
+                    filter = channelFilter,
+                    onFilterChange = { channelFilter = it },
                     onSelect = ::openChannel,
                     onAdd = { showCreate = true },
                     onDelete = vm::deleteChannel
@@ -371,12 +377,14 @@ private fun EmptyHint(message: String) {
 private fun ChannelListScreen(
     channels: List<ChannelEntity>,
     summaries: Map<Long, ChannelSummary>,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    filter: String,
+    onFilterChange: (String) -> Unit,
     onSelect: (Long) -> Unit,
     onAdd: () -> Unit,
     onDelete: (Long) -> Unit
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
-    var filter by rememberSaveable { mutableStateOf("all") }
     var pendingDelete by remember { mutableStateOf<ChannelEntity?>(null) }
 
     val filtered = channels.filter { channel ->
@@ -400,7 +408,7 @@ private fun ChannelListScreen(
         Column(Modifier.fillMaxSize().padding(inner)) {
             OutlinedTextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = onQueryChange,
                 placeholder = { Text("チャンネルを検索") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 singleLine = true,
@@ -412,7 +420,7 @@ private fun ChannelListScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
             ) {
                 listOf("all" to "すべて", "recent" to "最近", "unread" to "未読").forEach { (value, label) ->
-                    FilterChip(selected = filter == value, onClick = { filter = value },
+                    FilterChip(selected = filter == value, onClick = { onFilterChange(value) },
                         label = { Text(label) })
                 }
             }
