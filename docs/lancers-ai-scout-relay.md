@@ -23,7 +23,7 @@ only once and must not be published. This is a **per-connection** token, not
 ## 2. NAS: add Scout environment variables
 
 Edit the local Scout `.env` (or actual Compose environment file)
-under `/volume2/docker2/lancers-ai-scout`:
+under your Scout Docker working directory:
 
 ```dotenv
 RELAYHARBOR_INBOUND_URL=https://YOUR-RELAY-DOMAIN/v1/inbound/YOUR-CONNECTION-ID
@@ -39,7 +39,7 @@ until the new route is tested.
 Find Scout's existing Slack sender on the NAS:
 
 ```bash
-cd /volume2/docker2/lancers-ai-scout
+cd /path/to/your/scout-working-directory
 grep -R -n --include='*.py' -E 'SLACK_WEBHOOK_URL|hooks.slack.com|requests.post|httpx.post|ALERT_MODE' . --exclude-dir=.git --exclude-dir=__pycache__
 ```
 
@@ -87,7 +87,7 @@ Restart the Scout service only (replace `scout` if Compose shows
 another service name):
 
 ```bash
-cd /volume2/docker2/lancers-ai-scout
+cd /path/to/your/scout-working-directory
 docker compose config --services
 docker compose up -d --no-deps --force-recreate scout
 ```
