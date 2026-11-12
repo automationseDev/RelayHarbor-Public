@@ -192,10 +192,12 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     channels = channels.associateBy { it.id },
                     onOpen = ::openChannel
                 )
-                "chat" -> if (selectedId != null) {
-                    val channel = channels.firstOrNull { it.id == selectedId }
+                "chat" -> {
+                    val chatId = selectedId
+                    if (chatId != null) {
+                    val channel = channels.firstOrNull { it.id == chatId }
                     ChatScreen(
-                        channelId = selectedId,
+                        channelId = chatId,
                         name = channel?.name ?: "チャット",
                         messages = messages,
                         onBack = ::closeChat,
@@ -204,6 +206,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         sending = busyChannelId == selectedId,
                         error = aiError
                     )
+                    }
                 }
                 "integrations" -> IntegrationsScreen(
                     endpoint = settings.endpoint,
