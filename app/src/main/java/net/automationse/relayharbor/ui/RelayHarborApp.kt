@@ -70,6 +70,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.LifecycleStartEffect
 import net.automationse.relayharbor.data.ChannelEntity
 import net.automationse.relayharbor.data.ChannelSummary
 import net.automationse.relayharbor.data.MessageEntity
@@ -95,6 +96,14 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     var resumeLastPage by remember { mutableStateOf(uiStore.resumeLastPage()) }
     var showHomeActivity by remember { mutableStateOf(uiStore.showHomeActivity()) }
     var showHomeChannels by remember { mutableStateOf(uiStore.showHomeChannels()) }
+    var foregroundActive by remember { mutableStateOf(false) }
+    var foregroundSyncSeconds by remember {
+        mutableStateOf(uiStore.foregroundSyncSeconds())
+    }
+    LifecycleStartEffect(Unit) {
+        foregroundActive = true
+        onStopOrDispose { foregroundActive = false }
+    }
     var showCreate by rememberSaveable { mutableStateOf(false) }
     var channelNameDraft by rememberSaveable { mutableStateOf("") }
     val pageStates = rememberSaveableStateHolder()
@@ -118,12 +127,18 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     val aiError by vm.aiError.collectAsState()
     val busyChannelId by vm.busyChannelId.collectAsState()
 
-    LaunchedEffect(settings.mode, settings.endpoint, tokenConfigured) {
-        if (settings.mode != "local" && tokenConfigured &&
+    // Poll only when the activity is visible. As a default HOME app the Compose
+    // composition can survive after opening another app or turning off the screen.
+    // WorkManager handles the optional, slower background checks.
+    LaunchedEffect(
+        foregroundActive, foregroundSyncSeconds,
+        settings.mode, settings.endpoint, tokenConfigured
+    ) {
+        if (foregroundActive && settings.mode != "local" && tokenConfigured &&
             net.automationse.relayharbor.integration.RelayClient.validEndpoint(settings.endpoint)) {
             while (true) {
                 vm.syncNow()
-                delay(30_000)
+                delay(foregroundSyncSeconds * 1_000L)
             }
         }
     }
@@ -329,6 +344,11 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     onSave = vm::saveSettings,
                     onClearToken = vm::clearToken,
                     onSync = vm::syncNow,
+                    foregroundSyncSeconds = foregroundSyncSeconds,
+                    onForegroundSyncSecondsChange = { seconds ->
+                        foregroundSyncSeconds = seconds
+                        uiStore.saveForegroundSyncSeconds(seconds)
+                    },
                     updateState = appUpdateState,
                     onCheckUpdate = vm::checkAppUpdate,
                     onOpenUpdatePage = vm::openAppUpdatePage,
