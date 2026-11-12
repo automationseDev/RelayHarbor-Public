@@ -18,12 +18,14 @@ from typing import Literal
 
 import httpx
 import connections
+import connection_transfer
 import rss
 from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="RelayHarbor Relay", version="0.5.2", docs_url=None, redoc_url=None)
 app.include_router(connections.router)
+app.include_router(connection_transfer.router)
 app.include_router(rss.router)
 
 DATABASE = Path(os.getenv("RELAY_DATABASE", "/data/relayharbor.sqlite3"))

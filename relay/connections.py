@@ -13,6 +13,7 @@ import time
 import uuid
 
 import rss
+import slack_adapter
 from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -274,7 +275,11 @@ async def inbound(
         if len(raw) > 65536:
             raise HTTPException(status_code=413, detail="Webhook too large")
         try:
-            payload = server.WebhookMessage.model_validate_json(raw)
+            decoded = json.loads(raw)
+            if not isinstance(decoded, dict):
+                raise ValueError("JSON object required")
+            normalized = slack_adapter.normalize_slack_payload(decoded)
+            payload = server.WebhookMessage.model_validate(normalized)
         except Exception:
             raise HTTPException(status_code=422, detail="Invalid webhook payload") from None
         if not payload.text.strip() and not payload.card:

@@ -92,6 +92,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     val integrations by vm.integrations.collectAsState()
     val integrationStatus by vm.integrationStatus.collectAsState()
     val integrationCredential by vm.newIntegrationCredential.collectAsState()
+    val integrationTransferBusy by vm.integrationTransferBusy.collectAsState()
     val appUpdateState by vm.appUpdateState.collectAsState()
     val aiError by vm.aiError.collectAsState()
     val busyChannelId by vm.busyChannelId.collectAsState()
@@ -215,6 +216,9 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     connections = integrations,
                     status = integrationStatus,
                     credential = integrationCredential,
+                    transferBusy = integrationTransferBusy,
+                    onExport = vm::exportIntegrationSettings,
+                    onImport = vm::importIntegrationSettings,
                     onRefresh = vm::refreshIntegrations,
                     onAdd = vm::createIntegration,
                     onEdit = vm::updateIntegration,

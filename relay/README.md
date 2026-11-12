@@ -57,6 +57,26 @@ From relay/: pip install -r requirements.txt pytest
 Then: PYTHONPATH=. pytest -q test_server.py
 
 
+
+## Portable connection settings (v0.5.7)
+
+- `GET /v1/connections/export` with the existing `RELAY_CLIENT_TOKEN`
+  returns a portable JSON document containing **configuration only** (display name,
+  provider, channel, enabled, score and keyword filters, RSS HTTPS URL and interval).
+- `POST /v1/connections/import` with the same client authorization accepts
+  that document, validates it before updating SQLite, skips matching entries,
+  and atomically imports the rest. The response includes **new** one-time tokens
+  for newly created webhook sources; no token is exported.
+- The Android **連携** tab offers file picker actions **設定をエクスポート** and
+  **設定をインポート**. A newly imported Webhook needs to be reconfigured at
+  its sending service with its new URL and token.
+- Existing events/history, old credentials and RSS state are never overwritten.
+  200 integration definitions maximum per import. JSON files must stay under 256 KB
+  when imported from Android.
+- Inbound Webhooks with a dedicated Bearer token now also accept Slack Incoming
+  Webhook `blocks` JSON and turn it into a RelayHarbor rich card.
+  See [Lancers AI Scout migration](../docs/lancers-ai-scout-relay.md).
+
 ## v0.5 — RSS/Atom subscriptions
 
 RSS subscriptions are managed through the Android **連携** tab, with a public HTTPS feed URL, a destination channel, a 15–1440-minute polling interval and an optional keyword. No inbound token is created.
