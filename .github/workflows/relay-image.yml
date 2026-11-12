@@ -94,7 +94,7 @@ jobs:
         shell: bash
         run: |
           python -m pip install -r relay/requirements.txt pytest==8.3.5
-          PYTHONPATH=relay pytest -q relay/test_server.py relay/test_connections.py relay/test_rss.py
+          PYTHONPATH=relay pytest -q relay/test_server.py relay/test_connections.py relay/test_rss.py relay/test_connection_transfer.py
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
