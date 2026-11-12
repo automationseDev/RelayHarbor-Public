@@ -217,7 +217,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     onSync = vm::syncNow,
                     updateState = appUpdateState,
                     onCheckUpdate = vm::checkAppUpdate,
-                    onInstallUpdate = vm::installAppUpdate
+                    onOpenUpdatePage = vm::openAppUpdatePage
                 )
             }
         }

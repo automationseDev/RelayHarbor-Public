@@ -19,13 +19,13 @@ def require(condition: bool, message: str):
         raise SystemExit("PUBLIC UPGRADE CONTRACT FAILED: " + message)
 
 
-gradle = (ROOT / "app/build.gradle.kts").read_text()
-release = (ROOT / ".github/workflows/release.yml").read_text()
-updater = (ROOT / "app/src/main/java/net/automationse/relayharbor/integration/AppUpdater.kt").read_text()
-manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text()
-registry = (ROOT / ".github/workflows/relay-image.yml").read_text()
-deploy = (ROOT / "relay/scripts/nas-deploy.sh").read_text()
-poll = (ROOT / "relay/scripts/nas-auto-update.sh").read_text()
+gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
+release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+updater = (ROOT / "app/src/main/java/net/automationse/relayharbor/integration/AppUpdater.kt").read_text(encoding="utf-8")
+manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+registry = (ROOT / ".github/workflows/relay-image.yml").read_text(encoding="utf-8")
+deploy = (ROOT / "relay/scripts/nas-deploy.sh").read_text(encoding="utf-8")
+poll = (ROOT / "relay/scripts/nas-auto-update.sh").read_text(encoding="utf-8")
 
 pkg = re.search(r'applicationId\s*=\s*"([^"]+)"', gradle)
 namespace = re.search(r'namespace\s*=\s*"([^"]+)"', gradle)
@@ -50,16 +50,16 @@ for secret in ("KEYSTORE_BASE64", "KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWOR
     require("secrets." + secret in release, f"Release workflow needs {secret} from GitHub Secrets")
 require("https://api.github.com/repos/" + PUBLIC_REPO + "/releases/latest" in updater,
         "In-app updater must use public GitHub Releases without a GitHub token")
-require('requestPackageInstalls' not in updater or "canRequestPackageInstalls" in updater,
-        "Android install permission check must remain present")
-require("PackageInfoCompat.getLongVersionCode(archive)" in updater,
-        "Updater must reject APKs that are not newer")
-require("release.sha256" in updater and "MessageDigest.getInstance(\"SHA-256\")" in updater,
-        "Updater must verify APK SHA-256")
-require("context.packageName" in updater and "FileProvider.getUriForFile" in updater,
-        "Updater must validate the package and launch the safe installer")
-require("android.permission.REQUEST_INSTALL_PACKAGES" in manifest,
-        "The updater needs Android's install permission request")
+require("fun openReleasePage(" in updater and "Intent.ACTION_VIEW" in updater,
+        "Updater must open the official GitHub Releases page")
+require("fun download(" not in updater and "fun install(" not in updater,
+        "App must not self-download or install APKs")
+require("FileProvider" not in updater and "ACTION_MANAGE_UNKNOWN_APP_SOURCES" not in updater,
+        "Legacy self-install plumbing must be removed")
+require("android.permission.REQUEST_INSTALL_PACKAGES" not in manifest,
+        "Release must not request APK installation permission")
+require("androidx.core.content.FileProvider" not in manifest,
+        "Legacy APK FileProvider must be removed")
 require("relayharbor-public-relay" in registry, "Public GHCR workflow must use its own image")
 require(PUBLIC_GHCR in deploy and PUBLIC_GHCR in poll,
         "NAS deployment and auto-updater must use the public GHCR image")

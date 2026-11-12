@@ -48,7 +48,7 @@ key enrollment and signing certificate lifecycle requirements.
   Android rejects an APK signed with a different certificate.
 - The public app's updater targets the new public GitHub Releases. The older
   installed app still points to private Releases, so v0.5.2 is installed once
-  manually. Later releases support in-app download and user-approved install.
+  manually. From v0.5.3 onward, the app checks GitHub Releases and opens the official release page in a browser; it cannot download or install APKs itself.
 - Debug APKs have the distinct `.debug` app ID and cannot update production.
 
 See [public-upgrade.md](public-upgrade.md).

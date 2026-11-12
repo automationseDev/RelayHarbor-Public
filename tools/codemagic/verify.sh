@@ -9,9 +9,26 @@ PYTHONPATH=relay "$HOME/.relayharbor-ci/python-venv/bin/python" -m pytest -q \
   relay/test_server.py relay/test_connections.py relay/test_rss.py
 
 GRADLE="$HOME/.relayharbor-ci/gradle-8.11.1/bin/gradle"
+# Inspect the merged Android manifest of the APK actually built.
+check_apk_permissions() {
+  local apk="$1"
+  local sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+  local aapt="$sdk/build-tools/35.0.0/aapt"
+  [[ -x "$aapt" ]] || { echo "aapt is missing: $aapt" >&2; exit 1; }
+  local permissions
+  permissions="$("$aapt" dump permissions "$apk")" || {
+    echo "Failed to inspect compiled APK manifest: $apk" >&2
+    exit 1
+  }
+  if grep -Fq 'android.permission.REQUEST_INSTALL_PACKAGES' <<< "$permissions"; then
+    echo "Forbidden APK self-install permission found: $apk" >&2
+    exit 1
+  fi
+}
 if [[ "$mode" == debug ]]; then
   "$GRADLE" --no-daemon :app:assembleDebug :app:testDebugUnitTest
   test -s app/build/outputs/apk/debug/app-debug.apk
+  check_apk_permissions app/build/outputs/apk/debug/app-debug.apk
   exit 0
 fi
 
@@ -46,6 +63,7 @@ unset RELAYHARBOR_KEYSTORE_PATH RELAYHARBOR_STORE_PASSWORD RELAYHARBOR_KEY_ALIAS
 
 apk='app/build/outputs/apk/release/app-release.apk'
 [[ -s "$apk" ]] || { echo 'Signed release APK not generated' >&2; exit 1; }
+check_apk_permissions "$apk"
 SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 apksigner="$SDK/build-tools/35.0.0/apksigner"
 [[ -x "$apksigner" ]] || { echo "apksigner unavailable: $apksigner" >&2; exit 1; }

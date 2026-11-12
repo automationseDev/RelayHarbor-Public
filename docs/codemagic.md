@@ -44,7 +44,7 @@ git tag -a v0.5.3 -m "RelayHarbor v0.5.3"
 git push origin v0.5.3
 ```
 
-6. Codemagic tag workflow runs and publishes `RelayHarbor-v0.5.3.apk` to https://github.com/automationseDev/RelayHarbor-Public/releases . In Settings → アプリのアップデート, existing Android installs can download and apply it **without uninstalling**.
+6. Codemagic tag workflow runs and publishes `RelayHarbor-v0.5.3.apk` to https://github.com/automationseDev/RelayHarbor-Public/releases . Starting in v0.5.3, Settings → アプリのアップデート opens the official GitHub Release page in a browser. The app itself never downloads or installs APKs. Properly signed Android updates can replace an existing installation without uninstalling.
 
 ## Critical integrity checks
 

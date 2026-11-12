@@ -25,7 +25,8 @@ cloud and self-hosted (NAS/VPS) relay gateways, Dify, Webhooks, and AI providers
   release directly over v0.5.0 or v0.5.1 preserves local Android data.
 - Because the earlier updater points to a private release repository, the first
   v0.5.2 public migration is a one-time manual APK install. Future releases can
-  be checked in **設定 → アプリのアップデート**.
+  be checked in **設定 → アプリのアップデート**; v0.5.3+ opens the official
+  release page in a browser rather than downloading/installing APKs inside the app.
 - The public GHCR relay uses an independent package name; NAS credentials,
   configuration, the existing SQLite volume, and the network identity are unchanged.
 - Read [public migration](docs/public-upgrade.md) and

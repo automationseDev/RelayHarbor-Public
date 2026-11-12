@@ -14,7 +14,7 @@ PRs and Actions runs unexported.
 | First public app versionCode | `7` (previous v0.5.1 was 6) |
 | Android local Room data and settings | Preserved on in-place update |
 | First migration | Install signed v0.5.2 APK over existing installation; **do not uninstall** |
-| Future app updates | Settings → アプリのアップデート → check / download / Android install confirmation |
+| Future app updates | Settings → アプリのアップデート → check and open official release page (v0.5.3+) |
 | Public release source | `https://github.com/automationseDev/RelayHarbor-Public/releases` |
 | Public Docker image | `ghcr.io/automationsedev/relayharbor-public-relay` |
 | NAS Compose service/volume | `relay` / `relay_relay_data` (unchanged) |
