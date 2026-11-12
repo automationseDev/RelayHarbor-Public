@@ -73,6 +73,10 @@ fun SettingsScreen(
     val notificationPrefs = remember(context) { NotificationPreferences(context) }
     var notificationsEnabled by remember { mutableStateOf(notificationPrefs.enabled()) }
     var backgroundEnabled by remember { mutableStateOf(notificationPrefs.backgroundEnabled()) }
+    val uiStore = remember(context) { WorkspaceUiStore(context) }
+    var showRemoteThumbnails by remember {
+        mutableStateOf(uiStore.showRemoteThumbnails())
+    }
     var notificationPermission by remember {
         mutableStateOf(MessageNotifications.hasPermission(context))
     }
@@ -289,6 +293,28 @@ fun SettingsScreen(
                         Switch(
                             checked = showHomeChannels,
                             onCheckedChange = onShowHomeChannelsChange
+                        )
+                    }
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("チャットカードのサムネイルを表示")
+                            Text(
+                                "画像URLがある場合にHTTPSで取得します。通信量を節約したい場合や外部画像を読み込みたくない場合はオフにできます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = showRemoteThumbnails,
+                            onCheckedChange = {
+                                showRemoteThumbnails = it
+                                uiStore.saveShowRemoteThumbnails(it)
+                            }
                         )
                     }
                     Text(
