@@ -1,0 +1,74 @@
+name: One-time encrypted RelayHarbor signing recovery
+
+# Temporary manual-only workflow. Delete after recovering the signing key.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    # Strictly limited to the owner intentionally triggering main.
+    if: ${{ github.repository == 'automationseDev/RelayHarbor-Public' && github.actor == 'automationseDev' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Encrypt keystore and credentials without logging them
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          RECOVERY_PASSPHRASE: ${{ secrets.RECOVERY_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          for secret_name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD RECOVERY_PASSPHRASE; do
+            if [[ -z "${!secret_name:-}" ]]; then
+              echo "Missing secret named $secret_name" >&2
+              exit 1
+            fi
+          done
+
+          scratch="$(mktemp -d)"
+          archive="$RUNNER_TEMP/relayharbor-signing-plaintext.tar.gz"
+          cleanup() {
+            rm -f "$archive"
+            rm -rf "$scratch"
+          }
+          trap cleanup EXIT
+
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$scratch/relayharbor-release.jks"
+          [[ "$(wc -c < "$scratch/relayharbor-release.jks")" -gt 100 ]] || {
+            echo 'Keystore secret is unexpectedly small' >&2
+            exit 1
+          }
+          # Verify that the keystore exists and its alias and store password work.
+          if command -v keytool >/dev/null 2>&1; then
+            keytool -list -keystore "$scratch/relayharbor-release.jks" \
+              -storepass:env KEYSTORE_PASSWORD -alias "$KEY_ALIAS" >/dev/null 2>&1 || {
+                echo 'Original keystore could not be validated with stored credentials' >&2
+                exit 1
+              }
+          fi
+
+          printf '%s' "$KEYSTORE_PASSWORD" > "$scratch/KEYSTORE_PASSWORD.txt"
+          printf '%s' "$KEY_ALIAS" > "$scratch/KEY_ALIAS.txt"
+          printf '%s' "$KEY_PASSWORD" > "$scratch/KEY_PASSWORD.txt"
+
+          tar -czf "$archive" -C "$scratch" \
+            relayharbor-release.jks KEYSTORE_PASSWORD.txt KEY_ALIAS.txt KEY_PASSWORD.txt
+          openssl enc -aes-256-cbc -pbkdf2 -iter 300000 -salt \
+            -in "$archive" -out "$RUNNER_TEMP/relayharbor-signing-recovery.enc" \
+            -pass env:RECOVERY_PASSPHRASE
+          echo 'Encrypted recovery artifact created; no plaintext uploaded.'
+
+      - name: Upload encrypted file only
+        uses: actions/upload-artifact@v4
+        with:
+          name: relayharbor-signing-recovery-encrypted
+          path: ${{ runner.temp }}/relayharbor-signing-recovery.enc
+          if-no-files-found: error
+          retention-days: 1
