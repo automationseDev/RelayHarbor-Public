@@ -285,10 +285,16 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val (endpoint, token) = integrationAuth()
                 val summary = integrationClient.importJson(endpoint, token, document)
-                integrations.value = integrationClient.list(endpoint, token)
+                // The server returns inbound tokens ONCE. Display them before another
+                // network operation so a failed refresh cannot lose credentials.
                 pendingImportedCredentials.addAll(summary.credentials)
                 if (newIntegrationCredential.value == null && pendingImportedCredentials.isNotEmpty()) {
                     newIntegrationCredential.value = pendingImportedCredentials.removeFirst()
+                }
+                try {
+                    integrations.value = integrationClient.list(endpoint, token)
+                } catch (_: Exception) {
+                    // Credentials remain visible; the list can be refreshed later.
                 }
                 integrationStatus.value = "インポート完了：新規${summary.createdCount}件、重複スキップ${summary.skippedCount}件。" +
                     if (summary.credentials.isNotEmpty()) "Webhookトークンをすべてコピーしてください。" else ""
