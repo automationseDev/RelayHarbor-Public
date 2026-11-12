@@ -44,15 +44,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import net.automationse.relayharbor.data.ChatDraftStore
 import net.automationse.relayharbor.data.CardCodec
 import net.automationse.relayharbor.data.MessageEntity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
+    channelId: Long,
     name: String,
     messages: List<MessageEntity>,
     onBack: () -> Unit,
@@ -61,7 +64,9 @@ fun ChatScreen(
     sending: Boolean = false,
     error: String? = null
 ) {
-    var draft by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val draftStore = remember(context) { ChatDraftStore(context) }
+    var draft by remember(channelId) { mutableStateOf(draftStore.load(channelId)) }
     var openAddMenu by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
@@ -117,7 +122,10 @@ fun ChatScreen(
                         }
                         OutlinedTextField(
                             value = draft,
-                            onValueChange = { draft = it },
+                            onValueChange = {
+                                draft = it
+                                draftStore.save(channelId, it)
+                            },
                             placeholder = { Text("メッセージを入力…") },
                             modifier = Modifier.weight(1f),
                             maxLines = 4,
@@ -128,6 +136,7 @@ fun ChatScreen(
                             onClick = {
                                 onSend(draft)
                                 draft = ""
+                                draftStore.clear(channelId)
                             }
                         ) {
                             if (sending) {

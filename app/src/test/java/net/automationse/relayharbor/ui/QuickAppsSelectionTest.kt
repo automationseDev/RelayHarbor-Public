@@ -17,4 +17,14 @@ class QuickAppsSelectionTest {
         assertEquals(thirtyTwo, toggleFavoriteApp(thirtyTwo, "app33"))
         assertEquals(31, toggleFavoriteApp(thirtyTwo, "app1").size)
     }
+
+    @Test fun movesFavoritesWithoutDroppingAnything() {
+        val original = listOf("app1", "app2", "app3")
+        assertEquals(listOf("app2", "app1", "app3"), moveFavoriteApp(original, "app2", -1))
+        assertEquals(listOf("app1", "app3", "app2"), moveFavoriteApp(original, "app2", 1))
+        assertEquals(original, moveFavoriteApp(original, "app1", -1))
+        assertEquals(original, moveFavoriteApp(original, "app3", 1))
+        assertEquals(original, moveFavoriteApp(original, "missing", 1))
+        assertEquals(original, moveFavoriteApp(original, "app2", 2))
+    }
 }

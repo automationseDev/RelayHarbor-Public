@@ -69,6 +69,21 @@ fun IntegrationsScreen(
     var editing by remember { mutableStateOf<IntegrationConnection?>(null) }
     var deleting by remember { mutableStateOf<IntegrationConnection?>(null) }
     var rotating by remember { mutableStateOf<IntegrationConnection?>(null) }
+    var connectionQuery by rememberSaveable { mutableStateOf("") }
+    var connectionType by rememberSaveable { mutableStateOf("all") }
+    val visibleConnections = connections.filter { connection ->
+        (connectionQuery.isBlank() ||
+            connection.name.contains(connectionQuery, ignoreCase = true) ||
+            connection.channelName.contains(connectionQuery, ignoreCase = true) ||
+            connection.keyword.contains(connectionQuery, ignoreCase = true) ||
+            connection.feedUrl.contains(connectionQuery, ignoreCase = true)) &&
+            when (connectionType) {
+                "rss" -> connection.provider == "rss"
+                "webhook" -> connection.provider != "rss"
+                "active" -> connection.enabled
+                else -> true
+            }
+    }
     val baseUrl = endpoint.trim().trimEnd('/')
 
     Scaffold(topBar = { TopAppBar(title = { Text("サービス連携") }) }) { padding ->
@@ -98,11 +113,34 @@ fun IntegrationsScreen(
                     }
                 }
             }
-            if (connections.isEmpty()) Text(
-                "連携先はまだ登録されていません。",
+            OutlinedTextField(
+                value = connectionQuery,
+                onValueChange = { connectionQuery = it },
+                label = { Text("連携先を検索") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("all" to "すべて", "rss" to "RSS",
+                    "webhook" to "Webhook", "active" to "有効").forEach { (type, label) ->
+                    FilterChip(
+                        selected = connectionType == type,
+                        onClick = { connectionType = type },
+                        label = { Text(label) }
+                    )
+                }
+            }
+            Text(
+                "表示 ${visibleConnections.size} / ${connections.size} 件",
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            connections.forEach { connection ->
+            if (visibleConnections.isEmpty()) Text(
+                if (connections.isEmpty()) "連携先はまだ登録されていません。"
+                else "条件に合う連携先がありません。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            visibleConnections.forEach { connection ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)) {
