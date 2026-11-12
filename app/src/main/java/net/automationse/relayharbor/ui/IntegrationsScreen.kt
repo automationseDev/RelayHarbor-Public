@@ -159,6 +159,14 @@ fun IntegrationsScreen(
                     uiStore.saveIntegrationSearch(it)
                 },
                 label = { Text("連携先を検索") },
+                trailingIcon = {
+                    if (connectionQuery.isNotEmpty()) {
+                        TextButton(onClick = {
+                            connectionQuery = ""
+                            uiStore.saveIntegrationSearch("")
+                        }) { Text("消去") }
+                    }
+                },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
