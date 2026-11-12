@@ -111,6 +111,13 @@ internal class WorkspaceUiStore(context: Context) {
             .apply()
     }
 
+    fun showRemoteThumbnails(): Boolean =
+        preferences.getBoolean("show_remote_thumbnails", true)
+
+    fun saveShowRemoteThumbnails(value: Boolean) {
+        preferences.edit().putBoolean("show_remote_thumbnails", value).apply()
+    }
+
     fun showHomeActivity(): Boolean = preferences.getBoolean("show_home_activity", true)
     fun saveShowHomeActivity(value: Boolean) {
         preferences.edit().putBoolean("show_home_activity", value).apply()
