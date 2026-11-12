@@ -25,9 +25,20 @@ Add these repository Actions secrets in Settings -> Secrets and variables -> Act
 - KEY_PASSWORD
 
 Bump `versionCode` monotonically for every new production release, and update `versionName`.
-Create and push an annotated tag matching the version, e.g. `v0.5.2`; the
-Signed APK Release workflow builds and publishes the APK automatically.
-Alternatively run the workflow manually to test signed artifacts without tagging.
+Create and push an annotated tag matching the version, e.g. `v0.5.3`, **after**
+CI succeeds and the change is merged to `main`. The production release is
+**manual**, never automatic on a PR or a tag push. Run the workflow on `main` with the existing tag as input.
+The workflow checks out and signs that tag's commit:
+
+```powershell
+gh workflow run release.yml -R automationseDev/RelayHarbor-Public --ref main -f tag=v0.5.3
+```
+
+This uses the four existing GitHub Actions signing secrets; it tests the release,
+verifies the compiled APK does not request package-install permission, verifies
+the signing certificate matches the published v0.5.2 APK, and publishes the
+signed APK + SHA-256 checksum to GitHub Releases. Never use the Debug APK as a
+production install or create a new JKS for an upgrade.
 
 Important: Do not distribute the debug APK as the production app. Do not regenerate
 the release key on future updates. If using Google Play App Signing, follow Play's upload
