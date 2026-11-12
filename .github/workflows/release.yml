@@ -181,16 +181,10 @@ jobs:
           baseline="$RUNNER_TEMP/RelayHarbor-v0.5.2.apk"
           gh release download v0.5.2 -p 'RelayHarbor-v0.5.2.apk' -D "$RUNNER_TEMP"
           "$apksigner" verify "$baseline"
-          previous_cert="$("$apksigner" verify --print-certs "$baseline" |
-            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
-            tr '[:upper:]' '[:lower:]' | tr -d ':')"
-          current_cert="$("$apksigner" verify --print-certs "$apk" |
-            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
-            tr '[:upper:]' '[:lower:]' | tr -d ':')"
-          [[ "$previous_cert" =~ ^[0-9a-f]{64}$ &&
-             "$current_cert" == "$previous_cert" ]] || {
-            echo '::error::Production certificate differs from v0.5.2; release blocked.'; exit 1;
-          }
+          # Stable binary certificate comparison, independent of apksigner text formatting.
+          # This also pins the official v0.5.2 APK checksum and signer fingerprint.
+          # apksigner above verifies the cryptographic signature before extraction.
+          python3 scripts/verify_release_signer.py "$baseline" "$apk"
 
           # Compare against the actual latest published production versionCode.
           latest_tag="$(gh release view --json tagName --jq '.tagName')"
