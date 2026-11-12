@@ -191,3 +191,53 @@ def test_rss_https_redirect_validates_each_hop(client, monkeypatch):
     bad = client.post(url, headers=CLIENT)
     assert bad.status_code == 502, bad.text
     assert "IP addresses" in bad.json()["detail"]
+
+
+def test_rss_media_thumbnail_and_html_image_are_preserved(client, monkeypatch):
+    """The RSS relay retains image URL metadata without downloading image bytes."""
+    feed = b"""<?xml version="1.0"?>
+    <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+    <channel><title>Image Feed</title>
+    <item><guid>image-1</guid><title>Photo One</title>
+      <link>https://news.example.com/one</link>
+      <media:thumbnail url="https://cdn.example.com/thumb.webp" />
+    </item>
+    <item><guid>image-2</guid><title>Photo Two</title>
+      <description><![CDATA[<p>Article</p><img src="https://cdn.example.com/second.jpg" />]]></description>
+    </item>
+    <item><guid>image-3</guid><title>No Private Media</title>
+      <media:thumbnail url="https://192.168.0.1/internal.png" />
+    </item>
+    </channel></rss>"""
+
+    async def download(url, etag="", modified=""):
+        return feed, "", ""
+
+    monkeypatch.setattr(rss, "_download", download)
+    connection = new_rss(client)
+    result = client.post(
+        f"/v1/connections/{connection['id']}/refresh", headers=CLIENT
+    )
+    assert result.status_code == 200, result.text
+    assert result.json()["new"] == 3
+    cards = [e["card"] for e in client.get(
+        "/v1/events", headers=CLIENT
+    ).json()["events"]]
+    assert cards[0]["thumbnail_url"] == "https://cdn.example.com/thumb.webp"
+    assert cards[1]["thumbnail_url"] == "https://cdn.example.com/second.jpg"
+    assert "thumbnail_url" not in cards[2]
+
+
+def test_image_metadata_supports_enclosures_and_rejects_private_urls():
+    import image_metadata
+    assert image_metadata.rss_entry_thumbnail({
+        "enclosures": [{"href": "https://cdn.example.com/a.png", "type": "image/png"}]
+    }) == "https://cdn.example.com/a.png"
+    assert image_metadata.rss_entry_thumbnail({
+        "media_content": [{"url": "https://cdn.example.com/video.mp4", "type": "video/mp4"},
+                          {"url": "https://cdn.example.com/banner.jpg", "type": "image/jpeg"}]
+    }) == "https://cdn.example.com/banner.jpg"
+    for url in ("http://cdn.example.com/a.jpg", "https://localhost/a.jpg",
+                "https://10.0.0.5/a.jpg", "https://user:pass@cdn.example.com/a.jpg",
+                "data:image/png;base64,aaaa"):
+        assert image_metadata.public_image_url(url) == ""
