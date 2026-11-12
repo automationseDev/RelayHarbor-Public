@@ -658,8 +658,10 @@ private fun ActivityScreen(
     channels: Map<Long, ChannelEntity>,
     onOpen: (Long) -> Unit
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
-    var filter by rememberSaveable { mutableStateOf("all") }
+    val context = LocalContext.current
+    val uiStore = remember(context) { WorkspaceUiStore(context) }
+    var query by rememberSaveable { mutableStateOf(uiStore.activitySearch()) }
+    var filter by rememberSaveable { mutableStateOf(uiStore.activityListFilter()) }
     val visible = activity.filter { message ->
         val matches = query.isBlank() ||
             message.text.contains(query, ignoreCase = true) ||
@@ -676,7 +678,10 @@ private fun ActivityScreen(
         Column(Modifier.fillMaxSize().padding(inner)) {
             OutlinedTextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = {
+                    query = it
+                    uiStore.saveActivitySearch(it)
+                },
                 placeholder = { Text("通知や送信元を検索") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 singleLine = true,
@@ -690,7 +695,10 @@ private fun ActivityScreen(
                 listOf("all" to "すべて", "unread" to "未読", "read" to "既読").forEach { (value, label) ->
                     FilterChip(
                         selected = filter == value,
-                        onClick = { filter = value },
+                        onClick = {
+                            filter = value
+                            uiStore.saveActivityListFilter(value)
+                        },
                         label = { Text(label) }
                     )
                 }
