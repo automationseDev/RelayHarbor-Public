@@ -34,10 +34,33 @@ fi
 
 # Only signed release builds may access Codemagic's keystore/secret group.
 [[ -n "${CM_TAG:-}" ]] || { echo 'Release must be triggered by a Git tag (not manual PR build)' >&2; exit 1; }
-[[ -n "${CM_KEYSTORE_PATH:-}" && -f "$CM_KEYSTORE_PATH" ]] || { echo 'Configure Code signing identities > relayharbor_release with the ORIGINAL keystore' >&2; exit 1; }
-for variable in CM_KEYSTORE_PASSWORD CM_KEY_ALIAS CM_KEY_PASSWORD; do
-  [[ -n "${!variable:-}" ]] || { echo "Missing Codemagic signing variable: $variable" >&2; exit 1; }
+# On a Codemagic Personal/Free account, reconstitute the ORIGINAL
+# keystore from app-level Secret environment variables. Never log the data.
+for variable in RELAYHARBOR_KEYSTORE_BASE64 RELAYHARBOR_STORE_PASSWORD RELAYHARBOR_KEY_ALIAS RELAYHARBOR_KEY_PASSWORD; do
+  [[ -n "${!variable:-}" ]] || { echo "Missing app-level signing secret: $variable" >&2; exit 1; }
 done
+SIGNING_TMP="$(mktemp -d "${TMPDIR:-/tmp}/relayharbor-sign.XXXXXXXX")"
+chmod 700 "$SIGNING_TMP"
+trap 'rm -rf "$SIGNING_TMP"' EXIT
+export CM_KEYSTORE_PATH="$SIGNING_TMP/release.jks"
+python3 - <<'PY_SIGN'
+import base64
+import os
+from pathlib import Path
+payload = os.environ['RELAYHARBOR_KEYSTORE_BASE64'].strip()
+try:
+    data = base64.b64decode(payload, validate=True)
+except (ValueError, base64.binascii.Error):
+    raise SystemExit('The encoded signing file is invalid')
+if not (100 <= len(data) <= 10_000_000):
+    raise SystemExit('Unexpected signing file size')
+p = Path(os.environ['CM_KEYSTORE_PATH'])
+p.write_bytes(data)
+p.chmod(0o600)
+PY_SIGN
+export CM_KEYSTORE_PASSWORD="$RELAYHARBOR_STORE_PASSWORD"
+export CM_KEY_ALIAS="$RELAYHARBOR_KEY_ALIAS"
+export CM_KEY_PASSWORD="$RELAYHARBOR_KEY_PASSWORD"
 
 version="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
 version_code="$(sed -n 's/^[[:space:]]*versionCode = \([0-9]*\)/\1/p' app/build.gradle.kts | head -n 1)"
@@ -71,7 +94,7 @@ apksigner="$SDK/build-tools/35.0.0/apksigner"
 # Compare cryptographic signing certificate to the ALREADY-PUBLISHED v0.5.2.
 # This is what permits installing a new APK without uninstalling the old app.
 base_apk="$(mktemp -t relayharbor-baseline)"
-trap 'rm -f "$base_apk"' EXIT
+trap 'rm -f "$base_apk"; rm -rf "$SIGNING_TMP"' EXIT
 curl -fsSL --retry 3 -o "$base_apk" \
   'https://github.com/automationseDev/RelayHarbor-Public/releases/download/v0.5.2/RelayHarbor-v0.5.2.apk'
 old_digest="$($apksigner verify --print-certs "$base_apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]')"

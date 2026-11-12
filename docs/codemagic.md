@@ -1,5 +1,10 @@
 # RelayHarbor — Codemagic CI/CD (GitHub Actions-free)
 
+> **Personal/Free Codemagic:** Do not create a paid Team or upload the keystore
+> through Team Code Signing Identities. The release workflow uses app-level
+> encrypted secrets in the `relayharbor_signing` and `relayharbor_github`
+> groups. See [free-personal-signing.md](free-personal-signing.md).
+
 ## What is automated
 
 - `relayharbor-pr`: when a PR targets `main`, Codemagic runs privacy checks, Python Relay API tests, Android debug build and Android unit tests. No signing key, GitHub PAT, or other secrets are exposed to PR builds.
@@ -10,8 +15,8 @@
 ## One-time Codemagic configuration
 
 1. In Codemagic, select your connected `automationseDev/RelayHarbor-Public` application and switch its build configuration to **codemagic.yaml**.
-2. Go to **Team settings → Code signing identities → Android keystores**, upload the **original** release JKS used for v0.5.2, and enter its existing keystore password, key alias and key password. Set the keystore reference name to **`relayharbor_release`**. Do not generate a new signing key.
-3. Under app or team **Environment variables**, create the group **`relayharbor_github`** containing the encrypted variable **`GITHUB_TOKEN`**, a narrowly scoped GitHub token for `automationseDev/RelayHarbor-Public` with *Contents: Read and write*. Keep this token out of the source code. This group is attached **only** to the tag-release workflow, never PR checks.
+2. Under **App settings → Environment variables**, create the **`relayharbor_signing`** group and add the four encrypted variables in [free-personal-signing.md](free-personal-signing.md). Keep the **original v0.5.2 signing key**; never generate a new one.
+3. Under **App settings → Environment variables**, create the group **`relayharbor_github`** containing encrypted **`GITHUB_TOKEN`** for `automationseDev/RelayHarbor-Public` with *Contents: Read and write*. This group is attached **only** to tag-release builds, never PR checks.
 4. Confirm **Webhooks** are connected for **Pull requests** and **Branch or tag creation**. If Codemagic did not install them automatically, add a GitHub repository webhook with payload `https://api.codemagic.io/hooks/<YOUR_CODEMAGIC_APP_ID>` (find the app ID in the Codemagic app URL). See the Codemagic Webhooks page for the event choices.
 5. After the first `RelayHarbor PR Verification` build reports a check to GitHub, update **GitHub Settings → Rules / Branch protection** for `main`: require that Codemagic check (and desired human reviews), not old queued Actions checks. Enable **Allow auto-merge**. On approved PRs choose **Enable auto-merge**. No administrator override is required or recommended.
 

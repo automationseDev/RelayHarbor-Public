@@ -29,9 +29,8 @@ workflows:
     max_build_duration: 90
     environment:
       java: 17
-      android_signing:
-        - relayharbor_release
       groups:
+        - relayharbor_signing
         - relayharbor_github
     triggering:
       events:
