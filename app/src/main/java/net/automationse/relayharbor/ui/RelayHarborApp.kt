@@ -76,6 +76,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     var page by rememberSaveable { mutableStateOf("home") }
     var previousPage by rememberSaveable { mutableStateOf("channels") }
     var showCreate by rememberSaveable { mutableStateOf(false) }
+    var channelNameDraft by rememberSaveable { mutableStateOf("") }
     val pageStates = rememberSaveableStateHolder()
     var channelQuery by rememberSaveable { mutableStateOf("") }
     var channelFilter by rememberSaveable { mutableStateOf("all") }
@@ -103,6 +104,9 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                 delay(30_000)
             }
         }
+    }
+    LaunchedEffect(page, selectedId) {
+        if (page == "chat" && selectedId == null) page = "channels"
     }
     LaunchedEffect(page, settings.endpoint, tokenConfigured) {
         if (page == "integrations") vm.refreshIntegrations()
@@ -188,9 +192,10 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     channels = channels.associateBy { it.id },
                     onOpen = ::openChannel
                 )
-                "chat" -> {
+                "chat" -> if (selectedId != null) {
                     val channel = channels.firstOrNull { it.id == selectedId }
                     ChatScreen(
+                        channelId = selectedId,
                         name = channel?.name ?: "チャット",
                         messages = messages,
                         onBack = ::closeChat,
@@ -234,23 +239,23 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     }
 
     if (showCreate) {
-        var name by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showCreate = false },
             title = { Text("チャンネルを作成") },
             text = {
                 OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it.take(60) },
+                    value = channelNameDraft,
+                    onValueChange = { channelNameDraft = it.take(60) },
                     label = { Text("チャンネル名") },
                     singleLine = true
                 )
             },
             confirmButton = {
                 Button(
-                    enabled = name.isNotBlank(),
+                    enabled = channelNameDraft.isNotBlank(),
                     onClick = {
-                        vm.createChannel(name)
+                        vm.createChannel(channelNameDraft)
+                        channelNameDraft = ""
                         showCreate = false
                     }
                 ) { Text("作成") }
@@ -548,17 +553,66 @@ private fun ActivityScreen(
     channels: Map<Long, ChannelEntity>,
     onOpen: (Long) -> Unit
 ) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var filter by rememberSaveable { mutableStateOf("all") }
+    val visible = activity.filter { message ->
+        val matches = query.isBlank() ||
+            message.text.contains(query, ignoreCase = true) ||
+            message.sender.contains(query, ignoreCase = true) ||
+            (channels[message.channelId]?.name?.contains(query, ignoreCase = true) == true)
+        matches && when (filter) {
+            "unread" -> !message.isRead
+            "read" -> message.isRead
+            else -> true
+        }
+    }
+
     Scaffold(topBar = { WorkspaceBar("アクティビティ", "Bot・AIから届いたメッセージ") }) { inner ->
-        if (activity.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(inner).padding(16.dp)) {
-                EmptyHint("届いた通知は、ここに時系列で表示されます。")
+        Column(Modifier.fillMaxSize().padding(inner)) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("通知や送信元を検索") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                singleLine = true,
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+            ) {
+                listOf("all" to "すべて", "unread" to "未読", "read" to "既読").forEach { (value, label) ->
+                    FilterChip(
+                        selected = filter == value,
+                        onClick = { filter = value },
+                        label = { Text(label) }
+                    )
+                }
             }
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(inner),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(activity, key = { it.id }) { message ->
-                    ActivityItem(message, channels[message.channelId], onClick = { onOpen(message.channelId) })
+            Text(
+                "通知  ${visible.size}件",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
+            )
+            if (visible.isEmpty()) {
+                Box(Modifier.fillMaxWidth().padding(16.dp)) {
+                    EmptyHint(
+                        if (activity.isEmpty()) "届いた通知は、ここに時系列で表示されます。"
+                        else "条件に合う通知はありません。検索やフィルターを変更してください。"
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(visible, key = { it.id }) { message ->
+                        ActivityItem(message, channels[message.channelId],
+                            onClick = { onOpen(message.channelId) })
+                    }
                 }
             }
         }
