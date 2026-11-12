@@ -24,7 +24,7 @@ jobs:
           cache: pip
           cache-dependency-path: relay/requirements.txt
       - run: pip install -r relay/requirements.txt pytest==8.3.5
-      - run: pytest -q relay/test_server.py relay/test_connections.py relay/test_rss.py relay/test_connection_transfer.py
+      - run: pytest -q relay/test_server.py relay/test_connections.py relay/test_rss.py relay/test_connection_transfer.py relay/test_slack_adapter.py
         env:
           PYTHONPATH: relay
       - name: Validate NAS deployment shell scripts
