@@ -78,6 +78,7 @@ object MessageNotifications {
             .filter { shouldNotifyTimestamp(it.timestamp, now) }
             .filter { preferences.channelEnabled(it.channelId) }
             .filterNot { VisibleChat.appVisible && VisibleChat.channelId == it.channelId }
+            .toList()
             .takeLast(5)
             .forEach { event ->
                 send(
