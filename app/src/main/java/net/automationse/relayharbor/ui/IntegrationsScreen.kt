@@ -22,12 +22,16 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +40,7 @@ import net.automationse.relayharbor.integration.IntegrationConnection
 import net.automationse.relayharbor.integration.IntegrationCredential
 import java.text.DateFormat
 import java.util.Date
+import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,7 +60,12 @@ fun IntegrationsScreen(
     onDismissCredential: () -> Unit
 ) {
     val clipboard = LocalClipboardManager.current
-    var createOpen by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var createOpen by rememberSaveable { mutableStateOf(false) }
+    // Credentials are never stored in the editor draft.
+    LaunchedEffect(credential?.connection?.id) {
+        if (credential != null) IntegrationDraftStore.clear(context)
+    }
     var editing by remember { mutableStateOf<IntegrationConnection?>(null) }
     var deleting by remember { mutableStateOf<IntegrationConnection?>(null) }
     var rotating by remember { mutableStateOf<IntegrationConnection?>(null) }
@@ -165,6 +175,7 @@ fun IntegrationsScreen(
         ConnectionEditorDialog(
             initial = null,
             onDismiss = { createOpen = false },
+            onDiscard = { IntegrationDraftStore.clear(context); createOpen = false },
             onSave = { name, provider, channel, score, keyword, feedUrl, interval ->
                 onAdd(name, provider, channel, score, keyword, feedUrl, interval)
                 createOpen = false
@@ -250,15 +261,40 @@ fun IntegrationsScreen(
 private fun ConnectionEditorDialog(
     initial: IntegrationConnection?,
     onDismiss: () -> Unit,
+    onDiscard: () -> Unit = onDismiss,
     onSave: (String, String, String, Int, String, String, Int) -> Unit
 ) {
-    var provider by remember(initial?.id) { mutableStateOf(initial?.provider ?: "webhook") }
-    var name by remember(initial?.id) { mutableStateOf(initial?.name ?: "新しい連携") }
-    var channel by remember(initial?.id) { mutableStateOf(initial?.channelName ?: "Webhook") }
-    var minScore by remember(initial?.id) { mutableStateOf((initial?.minScore ?: 0).toFloat()) }
-    var keyword by remember(initial?.id) { mutableStateOf(initial?.keyword ?: "") }
-    var feedUrl by remember(initial?.id) { mutableStateOf(initial?.feedUrl ?: "") }
-    var interval by remember(initial?.id) { mutableStateOf(initial?.pollIntervalMinutes ?: 30) }
+    val context = LocalContext.current
+    val savedDraft = remember(initial?.id) {
+        if (initial == null) IntegrationDraftStore.load(context) else null
+    }
+    var provider by rememberSaveable(initial?.id) {
+        mutableStateOf(initial?.provider ?: savedDraft?.optString("provider", "webhook") ?: "webhook")
+    }
+    var name by rememberSaveable(initial?.id) {
+        mutableStateOf(initial?.name ?: savedDraft?.optString("name", "新しい連携") ?: "新しい連携")
+    }
+    var channel by rememberSaveable(initial?.id) {
+        mutableStateOf(initial?.channelName ?: savedDraft?.optString("channel", "Webhook") ?: "Webhook")
+    }
+    var minScore by rememberSaveable(initial?.id) {
+        mutableStateOf((initial?.minScore ?: savedDraft?.optInt("minScore", 0) ?: 0).toFloat())
+    }
+    var keyword by rememberSaveable(initial?.id) {
+        mutableStateOf(initial?.keyword ?: savedDraft?.optString("keyword", "") ?: "")
+    }
+    var feedUrl by rememberSaveable(initial?.id) {
+        mutableStateOf(initial?.feedUrl ?: savedDraft?.optString("feedUrl", "") ?: "")
+    }
+    var interval by rememberSaveable(initial?.id) {
+        mutableStateOf(initial?.pollIntervalMinutes ?: savedDraft?.optInt("interval", 30) ?: 30)
+    }
+    LaunchedEffect(initial?.id, provider, name, channel, minScore, keyword, feedUrl, interval) {
+        if (initial == null) {
+            IntegrationDraftStore.save(context, provider, name, channel,
+                minScore.toInt(), keyword, feedUrl, interval)
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "連携先を追加" else "連携先を編集") },
@@ -281,6 +317,8 @@ private fun ConnectionEditorDialog(
                             }, label = { Text("RSS") })
                     }
                 }
+                if (initial == null) Text("入力内容は自動保存されます。閉じても次回再開できます。",
+                    style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(
                     value = name, onValueChange = { name = it.take(60) },
                     label = { Text("連携名") }, singleLine = true
@@ -340,7 +378,42 @@ private fun ConnectionEditorDialog(
             ) { Text(if (initial == null) "作成" else "保存") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("キャンセル") }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (initial == null) TextButton(onClick = onDiscard) { Text("下書きを破棄") }
+                TextButton(onClick = onDismiss) {
+                    Text(if (initial == null) "閉じる" else "キャンセル")
+                }
+            }
         }
     )
+}
+
+/** Stores only non-secret connection editor fields; never credentials or access tokens. */
+private object IntegrationDraftStore {
+    private const val PREFS = "integration_editor_draft"
+    private const val KEY = "create_draft_json"
+
+    fun load(context: Context): JSONObject? = runCatching {
+        val data = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY, null) ?: return null
+        JSONObject(data)
+    }.getOrNull()
+
+    fun save(context: Context, provider: String, name: String, channel: String,
+             minScore: Int, keyword: String, feedUrl: String, interval: Int) {
+        val json = JSONObject()
+            .put("provider", provider)
+            .put("name", name)
+            .put("channel", channel)
+            .put("minScore", minScore)
+            .put("keyword", keyword)
+            .put("feedUrl", feedUrl)
+            .put("interval", interval)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY, json.toString()).apply()
+    }
+
+    fun clear(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).apply()
+    }
 }
