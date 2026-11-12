@@ -57,6 +57,8 @@ def normalize_slack_payload(value: dict) -> dict:
         fallback = ""
     body = "\n".join(parts).strip()[:8500]
     text = fallback.strip() or body or title
+    if not text.strip():
+        return {"id": value.get("id"), "text": ""}
     card = {
         "schemaVersion": 1,
         "title": title or "Lancers AI Scout",
