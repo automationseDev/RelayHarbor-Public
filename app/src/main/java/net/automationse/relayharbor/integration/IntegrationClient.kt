@@ -33,6 +33,12 @@ data class IntegrationCredential(
     val token: String
 )
 
+data class IntegrationImportResult(
+    val createdCount: Int,
+    val skippedCount: Int,
+    val credentials: List<IntegrationCredential>
+)
+
 class IntegrationClient(private val relay: RelayClient = RelayClient()) {
     private fun decode(obj: JsonObject): IntegrationConnection = IntegrationConnection(
         id = obj.getValue("id").jsonPrimitive.content,
@@ -94,6 +100,43 @@ class IntegrationClient(private val relay: RelayClient = RelayClient()) {
         ).jsonObject
         return IntegrationCredential(
             decode(response), response["token"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        )
+    }
+
+    suspend fun exportJson(endpoint: String, clientToken: String): String {
+        val exported = relay.execute(endpoint, clientToken, "/v1/connections/export")
+        val data = Json.parseToJsonElement(exported).jsonObject
+        require(data["format"]?.jsonPrimitive?.contentOrNull == "relayharbor-integrations") {
+            "連携設定のエクスポート形式が不正です"
+        }
+        return exported
+    }
+
+    suspend fun importJson(
+        endpoint: String, clientToken: String, content: String
+    ): IntegrationImportResult {
+        require(content.toByteArray(Charsets.UTF_8).size <= 256_000) {
+            "連携設定ファイルのサイズは256KB以内にしてください"
+        }
+        val document = Json.parseToJsonElement(content).jsonObject
+        require(document["format"]?.jsonPrimitive?.contentOrNull == "relayharbor-integrations" &&
+            document["version"]?.jsonPrimitive?.intOrNull == 1 &&
+            document["connections"]?.jsonArray != null
+        ) { "RelayHarborの連携設定JSON（形式v1）を選択してください" }
+        val json = Json.parseToJsonElement(
+            relay.execute(endpoint, clientToken, "/v1/connections/import", document.toString())
+        ).jsonObject
+        val credentials = json.getValue("created").jsonArray.map { item ->
+            val obj = item.jsonObject
+            IntegrationCredential(
+                connection = decode(obj),
+                token = obj["token"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            )
+        }
+        return IntegrationImportResult(
+            createdCount = json["created_count"]?.jsonPrimitive?.intOrNull ?: 0,
+            skippedCount = json["skipped"]?.jsonPrimitive?.intOrNull ?: 0,
+            credentials = credentials.filter { it.token.isNotEmpty() }
         )
     }
 
