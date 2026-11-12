@@ -20,15 +20,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -69,6 +76,13 @@ internal class FavoriteAppStore(context: Context) {
         }.distinct().take(MAX_SHORTCUTS)
     }.getOrDefault(emptyList())
 
+    fun layout(): String = prefs.getString("layout", "grid")?.takeIf { it == "row" } ?: "grid"
+
+    fun saveLayout(value: String) {
+        require(value == "grid" || value == "row")
+        prefs.edit().putString("layout", value).apply()
+    }
+
     fun save(items: List<String>) {
         val json = JSONArray()
         items.distinct().take(MAX_SHORTCUTS).forEach { json.put(it) }
@@ -80,6 +94,17 @@ internal fun toggleFavoriteApp(items: List<String>, key: String): List<String> =
     key in items -> items.filterNot { it == key }
     items.size >= MAX_SHORTCUTS -> items
     else -> items + key
+}
+
+internal fun moveFavoriteApp(items: List<String>, key: String, offset: Int): List<String> {
+    val oldIndex = items.indexOf(key)
+    val newIndex = oldIndex + offset
+    if (oldIndex < 0 || offset !in setOf(-1, 1) || newIndex !in items.indices) return items
+    return items.toMutableList().apply {
+        val other = this[newIndex]
+        this[newIndex] = key
+        this[oldIndex] = other
+    }
 }
 
 private data class LaunchableApp(
@@ -167,10 +192,12 @@ internal fun QuickAppsSection() {
     val context = LocalContext.current
     val store = remember(context) { FavoriteAppStore(context) }
     var favorites by remember { mutableStateOf(store.load()) }
+    var displayMode by remember { mutableStateOf(store.layout()) }
     var apps by remember { mutableStateOf<List<LaunchableApp>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    var pickerTab by rememberSaveable { mutableStateOf("select") }
 
     LaunchedEffect(pickerOpen) {
         loading = true
@@ -190,6 +217,14 @@ internal fun QuickAppsSection() {
         store.save(updated)
     }
 
+    fun move(key: String, offset: Int) {
+        val updated = moveFavoriteApp(favorites, key, offset)
+        if (updated != favorites) {
+            favorites = updated
+            store.save(updated)
+        }
+    }
+
     val appsByKey = remember(apps) { apps.associateBy { it.key } }
     val pinnedApps = favorites.mapNotNull { appsByKey[it] }
 
@@ -206,6 +241,20 @@ internal fun QuickAppsSection() {
                 Text("追加・編集")
             }
         }
+        if (pinnedApps.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = displayMode == "grid",
+                    onClick = { displayMode = "grid"; store.saveLayout("grid") },
+                    label = { Text("4列グリッド") }
+                )
+                FilterChip(
+                    selected = displayMode == "row",
+                    onClick = { displayMode = "row"; store.saveLayout("row") },
+                    label = { Text("横スクロール") }
+                )
+            }
+        }
         if (loading && pinnedApps.isEmpty()) {
             CircularProgressIndicator(modifier = Modifier.size(24.dp))
         } else if (pinnedApps.isEmpty()) {
@@ -220,6 +269,17 @@ internal fun QuickAppsSection() {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
                 )
+            }
+        } else if (displayMode == "row") {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(pinnedApps, key = { it.key }) { app ->
+                    Box(modifier = Modifier.width(82.dp)) {
+                        FavoriteAppTile(app) { launchFavoriteApp(context, app) }
+                    }
+                }
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -268,35 +328,83 @@ internal fun QuickAppsSection() {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("${favorites.size}/32件選択中。変更は自動保存されます。",
                         style = MaterialTheme.typography.bodySmall)
-                    OutlinedTextField(
-                        value = query, onValueChange = { query = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("アプリを検索") }, singleLine = true
-                    )
-                    if (loading) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    } else if (visible.isEmpty()) {
-                        Text("表示できるアプリがありません。")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = pickerTab == "select",
+                            onClick = { pickerTab = "select" },
+                            label = { Text("アプリの追加・解除") }
+                        )
+                        FilterChip(
+                            selected = pickerTab == "order",
+                            onClick = { pickerTab = "order" },
+                            label = { Text("並び替え") }
+                        )
+                    }
+                    if (pickerTab == "order") {
+                        if (pinnedApps.isEmpty()) {
+                            Text("追加したアプリはここで表示順を変更できます。")
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 340.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                itemsIndexed(pinnedApps, key = { _, app -> app.key }) { index, app ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        InstalledAppIcon(app, 36.dp)
+                                        Text(app.label, modifier = Modifier.weight(1f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis)
+                                        IconButton(
+                                            enabled = index > 0,
+                                            onClick = { move(app.key, -1) }
+                                        ) {
+                                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "上に移動")
+                                        }
+                                        IconButton(
+                                            enabled = index < pinnedApps.lastIndex,
+                                            onClick = { move(app.key, 1) }
+                                        ) {
+                                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "下に移動")
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth().heightIn(max = 340.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(visible, key = { it.key }) { app ->
-                                val selected = app.key in favorites
-                                Row(
-                                    modifier = Modifier.fillMaxWidth()
-                                        .clickable { toggle(app.key) }
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    InstalledAppIcon(app, 40.dp)
-                                    Text(app.label, modifier = Modifier.weight(1f),
-                                        maxLines = 2,
-                                        style = MaterialTheme.typography.bodyMedium)
-                                    Checkbox(checked = selected,
-                                        onCheckedChange = { toggle(app.key) })
+                        OutlinedTextField(
+                            value = query, onValueChange = { query = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("アプリを検索") }, singleLine = true
+                        )
+                        if (loading) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        } else if (visible.isEmpty()) {
+                            Text("表示できるアプリがありません。")
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 340.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                items(visible, key = { it.key }) { app ->
+                                    val selected = app.key in favorites
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth()
+                                            .clickable { toggle(app.key) }
+                                            .padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        InstalledAppIcon(app, 40.dp)
+                                        Text(app.label, modifier = Modifier.weight(1f),
+                                            maxLines = 2,
+                                            style = MaterialTheme.typography.bodyMedium)
+                                        Checkbox(checked = selected,
+                                            onCheckedChange = { toggle(app.key) })
+                                    }
                                 }
                             }
                         }
