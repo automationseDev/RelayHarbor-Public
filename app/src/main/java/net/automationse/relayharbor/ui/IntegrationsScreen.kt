@@ -81,8 +81,13 @@ fun IntegrationsScreen(
     var editing by remember { mutableStateOf<IntegrationConnection?>(null) }
     var deleting by remember { mutableStateOf<IntegrationConnection?>(null) }
     var rotating by remember { mutableStateOf<IntegrationConnection?>(null) }
-    var connectionQuery by rememberSaveable { mutableStateOf("") }
-    var connectionType by rememberSaveable { mutableStateOf("all") }
+    val uiStore = remember(context) { WorkspaceUiStore(context) }
+    var connectionQuery by rememberSaveable {
+        mutableStateOf(uiStore.integrationSearch())
+    }
+    var connectionType by rememberSaveable {
+        mutableStateOf(uiStore.integrationListFilter())
+    }
     val visibleConnections = connections.filter { connection ->
         (connectionQuery.isBlank() ||
             connection.name.contains(connectionQuery, ignoreCase = true) ||
@@ -149,7 +154,10 @@ fun IntegrationsScreen(
             }
             OutlinedTextField(
                 value = connectionQuery,
-                onValueChange = { connectionQuery = it },
+                onValueChange = {
+                    connectionQuery = it
+                    uiStore.saveIntegrationSearch(it)
+                },
                 label = { Text("連携先を検索") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
@@ -159,7 +167,10 @@ fun IntegrationsScreen(
                     "webhook" to "Webhook", "active" to "有効").forEach { (type, label) ->
                     FilterChip(
                         selected = connectionType == type,
-                        onClick = { connectionType = type },
+                        onClick = {
+                            connectionType = type
+                            uiStore.saveIntegrationListFilter(type)
+                        },
                         label = { Text(label) }
                     )
                 }
