@@ -2,6 +2,10 @@ package net.automationse.relayharbor.data
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
@@ -17,10 +21,55 @@ data class RichCard(
     val score: Int? = null,
     val badge: String = "",
     val metrics: List<CardMetric> = emptyList(),
-    val url: String? = null
+    val url: String? = null,
+    val thumbnailUrl: String? = null
 )
 
+/** Strict, secret-free HTTPS image link validation; media URLs are never trusted as code. */
+object PublicThumbnailUrl {
+    fun validate(value: String?): String? {
+        val url = value?.trim()?.takeIf { it.length in 1..2048 } ?: return null
+        if (url.any { it.code < 32 || it.code == 127 }) return null
+        return runCatching {
+            val uri = java.net.URI(url)
+            val host = uri.host?.lowercase()?.trimEnd('.') ?: return@runCatching null
+            if (!uri.scheme.equals("https", ignoreCase = true) ||
+                uri.rawUserInfo != null || uri.rawFragment != null ||
+                uri.port !in listOf(-1, 443) ||
+                host == "localhost" ||
+                host.endsWith(".localhost") || host.endsWith(".local") ||
+                host.endsWith(".internal") || host.endsWith(".home.arpa") ||
+                host.endsWith(".test") || host.endsWith(".invalid") ||
+                !host.contains('.') || host.startsWith('.') || host.contains("..") ||
+                host.all { it.isDigit() || it == '.' } ||
+                host.contains(':')
+            ) null else url
+        }.getOrNull()
+    }
+}
+
 object CardCodec {
+    private fun candidate(element: JsonElement?): String? {
+        return when (element) {
+            is JsonObject -> element["url"]?.let { candidate(it) }
+                ?: element["src"]?.let { candidate(it) }
+            else -> runCatching { element?.jsonPrimitive?.contentOrNull }.getOrNull()
+        }
+    }
+
+    private fun extractThumbnail(obj: JsonObject): String? {
+        val keys = listOf("thumbnail_url", "thumbnailUrl", "image_url", "imageUrl",
+            "thumbnail", "image")
+        for (key in keys) {
+            val validated = PublicThumbnailUrl.validate(candidate(obj[key]))
+            if (validated != null) return validated
+        }
+        val images = obj["images"] as? JsonArray
+        return images?.take(5)?.firstNotNullOfOrNull {
+            PublicThumbnailUrl.validate(candidate(it))
+        }
+    }
+
     fun encode(card: RichCard): String = buildJsonObject {
         put("schemaVersion", 1)
         put("title", card.title)
@@ -28,6 +77,9 @@ object CardCodec {
         put("score", card.score?.coerceIn(0, 100))
         put("badge", card.badge)
         put("url", card.url)
+        card.thumbnailUrl?.let { url ->
+            PublicThumbnailUrl.validate(url)?.let { put("thumbnail_url", it) }
+        }
         put("metrics", buildJsonArray {
             card.metrics.forEach { metric ->
                 add(buildJsonObject {
@@ -65,7 +117,8 @@ object CardCodec {
                     ) target else null
                 }.getOrNull()
             },
-            metrics = metrics
+            metrics = metrics,
+            thumbnailUrl = extractThumbnail(obj)
         )
     }.getOrNull()
 }
