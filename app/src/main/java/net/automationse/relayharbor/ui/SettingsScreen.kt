@@ -13,7 +13,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -46,7 +45,7 @@ fun SettingsScreen(
     onSync: () -> Unit,
     updateState: AppUpdateState,
     onCheckUpdate: () -> Unit,
-    onInstallUpdate: () -> Unit
+    onOpenUpdatePage: () -> Unit
 ) {
     var mode by remember(settings.mode) { mutableStateOf(settings.mode) }
     var endpoint by remember(settings.endpoint) { mutableStateOf(settings.endpoint) }
@@ -135,12 +134,6 @@ fun SettingsScreen(
                     Text("現在のバージョン：v" + AppUpdater.installedVersion(context))
                     Text(updateState.message, style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary)
-                    updateState.progress?.let { value ->
-                        LinearProgressIndicator(
-                            progress = { value.coerceIn(0, 100) / 100f },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
                     Button(
                         onClick = onCheckUpdate,
                         enabled = !updateState.busy,
@@ -150,15 +143,15 @@ fun SettingsScreen(
                         Text("利用可能：${release.version}",
                             style = MaterialTheme.typography.bodyMedium)
                         Button(
-                            onClick = onInstallUpdate,
+                            onClick = onOpenUpdatePage,
                             enabled = !updateState.busy,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(if (updateState.downloadedApk != null) "インストール" else "ダウンロードしてインストール")
+                            Text("公式リリースページを開く")
                         }
                     }
                     Text(
-                        "GitHub Releasesの署名済みAPKを検証してから、Androidのインストール確認画面を開きます。初回のみ「このアプリからのインストール」を許可してください。アプリとデータは削除されません。",
+                        "GitHub Releasesで最新版を確認できます。アプリはAPKのダウンロードやインストールを実行しません。有害アプリ警告が出た場合はインストールを中止してください。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

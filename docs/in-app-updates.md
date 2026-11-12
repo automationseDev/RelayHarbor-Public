@@ -22,18 +22,26 @@ Target backend version: **0.5.0**. The database, GitHub Actions webhook, `.env`,
 
 In Android v0.5.1, RSS registration queries `/healthz` before registration and displays a clear instruction if the server is too old. HTTP 422 responses now include the actual FastAPI validation `detail`, instead of a generic "check tokens" message. If the server is already at v0.5.0, inspect the displayed detail for RSS URL format (public HTTPS only, port 443), field validation and other rejection reasons.
 
-## Android self-update (v0.5.2 and newer)
+## Android version checks (v0.5.3 and newer)
 
-1. Install the **signed** RelayHarbor v0.5.2 APK from **this public repository's** GitHub Releases once, directly over the previously installed app. Do not uninstall v0.5.0/v0.5.1; the signing key and app ID must be the same.
-2. Open **設定 → アプリのアップデート → 最新バージョンを確認**.
-3. When a newer published release is available, select **ダウンロードしてインストール**.
-4. The app requests the official latest GitHub release using HTTPS, finds the exact `RelayHarbor-vX.Y.Z.apk` asset and validates its published SHA-256 digest, expected package name and higher version code.
-5. Android's package installer opens. On the first use, Android may ask to allow installing apps from **RelayHarbor**. Grant that permission if you trust your GitHub Releases, return to the app and tap **インストール** again.
-6. Android verifies that the APK uses the same signing identity before replacing the installed app. User confirmation is always required. Local Room data and settings persist for properly signed in-place upgrades.
+From v0.5.3, RelayHarbor no longer downloads APKs or requests Android package
+installation permissions. Settings → アプリのアップデート → 最新バージョンを確認
+checks the official GitHub Releases API for a newer signed release.
+When a new release exists, the button **公式リリースページを開く** opens the
+official GitHub Releases tag page in a browser. The user may inspect the APK
+and Android/Play Protect warnings independently. **Do not install if Play
+Protect flags an APK as harmful.**
 
-The app has no unattended/background silent installation, no unknown APK sources and no GitHub PAT embedded in Android. The in-app updater is designed for a GitHub-distributed APK. Distribution through Google Play may impose separate policies on `REQUEST_INSTALL_PACKAGES`; if publishing there, use the Play in-app updates API instead.
+No background or silent installation is possible. Existing Room databases and
+settings are preserved on normal in-place upgrades if the package ID is
+unchanged, the APK signing certificate is the same, and versionCode increases.
+The browser/Android installer still performs its usual checks independently.
 
-The release asset must have `digest=sha256:<64 hex>` in GitHub's Releases API. The download is limited to 150 MiB and restricted to official GitHub/release-asset domains.
+The previous v0.5.1/v0.5.2 built-in APK download+installation feature and
+REQUEST_INSTALL_PACKAGES permission were intentionally removed to reduce
+privileges. This change does not guarantee a Play Protect classification will
+be overturned. Consult Google's official Play Protect developer appeal process
+for a flagged APK.
 
 ## First public release
 

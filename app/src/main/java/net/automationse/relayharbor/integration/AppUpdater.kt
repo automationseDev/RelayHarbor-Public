@@ -1,13 +1,8 @@
 package net.automationse.relayharbor.integration
 
-import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.provider.Settings
-import androidx.core.content.FileProvider
-import androidx.core.content.pm.PackageInfoCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -16,10 +11,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
-import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import java.security.MessageDigest
 
 /** A signed APK published in RelayHarbor-Public's GitHub Releases. */
 data class AppRelease(
@@ -122,90 +115,20 @@ object AppUpdater {
         )
     }
 
-    suspend fun download(
-        context: Context, release: AppRelease, progress: (Int) -> Unit
-    ): File = withContext(Dispatchers.IO) {
-        val folder = File(context.cacheDir, "updates")
-        check(folder.isDirectory || folder.mkdirs()) { "更新保存先を作成できません" }
-        val tmp = File(folder, "pending.apk")
-        val destination = File(folder, "relayharbor-update.apk")
-        val digest = MessageDigest.getInstance("SHA-256")
-        tmp.delete()
-        destination.delete()
-        val conn = connect(release.downloadUrl, "application/vnd.android.package-archive")
-        try {
-            var written = 0L
-            conn.inputStream.use { source ->
-                tmp.outputStream().use { output ->
-                    val buffer = ByteArray(16 * 1024)
-                    while (true) {
-                        val count = source.read(buffer)
-                        if (count < 0) break
-                        written += count
-                        check(written <= MAX_APK_BYTES && written <= release.size) {
-                            "APKサイズが予定値を超えました"
-                        }
-                        digest.update(buffer, 0, count)
-                        output.write(buffer, 0, count)
-                        progress((written * 100 / release.size).toInt().coerceIn(0, 100))
-                    }
-                }
-            }
-            check(written == release.size) { "APKの取得が完了していません" }
-            val sha = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
-            check(sha == release.sha256) { "APKのSHA-256が一致しません。インストールを中止します" }
-            val archive = if (Build.VERSION.SDK_INT >= 33) {
-                context.packageManager.getPackageArchiveInfo(
-                    tmp.absolutePath, android.content.pm.PackageManager.PackageInfoFlags.of(0)
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                context.packageManager.getPackageArchiveInfo(tmp.absolutePath, 0)
-            } ?: error("APKを解析できません")
-            check(archive.packageName == context.packageName) {
-                "別のAndroidアプリのAPKです"
-            }
-            val installed = context.packageManager.getPackageInfo(context.packageName, 0)
-            check(PackageInfoCompat.getLongVersionCode(archive) > PackageInfoCompat.getLongVersionCode(installed)) {
-                "インストール済みと同じか古いAPKです"
-            }
-            check(archive.versionName == release.version.removePrefix("v")) {
-                "APKとリリースのバージョンが一致しません"
-            }
-            check(tmp.renameTo(destination)) { "更新APKを確定できません" }
-            progress(100)
-            destination
-        } catch (exception: Exception) {
-            tmp.delete()
-            throw exception
-        } finally { conn.disconnect() }
+    /**
+     * Do not download or install APKs from inside the application.
+     * Open the exact official GitHub release page in the system browser;
+     * the user and Android decide whether to download or install.
+     */
+    fun openReleasePage(context: Context, release: AppRelease) {
+        val url = trustedUrl(release.pageUrl)
+        val expected = "https://github.com/automationseDev/RelayHarbor-Public/releases/tag/${release.version}"
+        require(url.toExternalForm() == expected) {
+            "公式のGitHub Releasesページ以外には移動できません"
+        }
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(expected)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
     }
 
-    /**
-     * Android's own package installer checks the APK's signing identity before an
-     * existing installation can be replaced. The user must approve installation.
-     * Returns false when Android first needs user permission for unknown sources.
-     */
-    fun install(context: Context, file: File): Boolean {
-        check(file.exists() && file.length() > 0) { "更新ファイルが見つかりません" }
-        if (Build.VERSION.SDK_INT >= 26 &&
-            !context.packageManager.canRequestPackageInstalls()) {
-            val settings = Intent(
-                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:" + context.packageName)
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(settings)
-            return false
-        }
-        val uri = FileProvider.getUriForFile(
-            context, context.packageName + ".fileprovider", file
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            clipData = ClipData.newRawUri("RelayHarbor update", uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(intent)
-        return true
-    }
 }

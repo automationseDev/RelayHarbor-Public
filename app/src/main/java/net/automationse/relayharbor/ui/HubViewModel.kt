@@ -18,7 +18,6 @@ import net.automationse.relayharbor.integration.IntegrationConnection
 import net.automationse.relayharbor.integration.IntegrationCredential
 import net.automationse.relayharbor.integration.AppRelease
 import net.automationse.relayharbor.integration.AppUpdater
-import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,9 +32,7 @@ import kotlinx.coroutines.sync.withLock
 data class AppUpdateState(
     val message: String = "GitHub Releasesで更新を確認できます",
     val release: AppRelease? = null,
-    val progress: Int? = null,
-    val busy: Boolean = false,
-    val downloadedApk: File? = null
+    val busy: Boolean = false
 )
 
 class HubViewModel(app: Application) : AndroidViewModel(app) {
@@ -329,36 +326,17 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun installAppUpdate() {
-        val state = appUpdateState.value
-        if (state.busy) return
-        val release = state.release ?: return
-        viewModelScope.launch {
-            appUpdateState.value = state.copy(busy = true, message = "更新APKを準備中…")
-            try {
-                val apk = state.downloadedApk?.takeIf { it.exists() }
-                    ?: AppUpdater.download(getApplication(), release) { progress ->
-                        appUpdateState.value = appUpdateState.value.copy(
-                            progress = progress,
-                            message = "署名済みAPKを取得中：$progress%"
-                        )
-                    }
-                appUpdateState.value = appUpdateState.value.copy(
-                    downloadedApk = apk, busy = false, progress = 100,
-                    message = "ダウンロード完了。Androidのインストール画面を開きます"
-                )
-                val installerOpened = AppUpdater.install(getApplication(), apk)
-                if (!installerOpened) {
-                    appUpdateState.value = appUpdateState.value.copy(
-                        message = "このアプリからのインストールを許可し、設定に戻って「インストール」をもう一度押してください"
-                    )
-                }
-            } catch (error: Exception) {
-                appUpdateState.value = appUpdateState.value.copy(
-                    busy = false,
-                    message = "アプリ更新に失敗：" + (error.message ?: "処理エラー")
-                )
-            }
+    fun openAppUpdatePage() {
+        val release = appUpdateState.value.release ?: return
+        try {
+            AppUpdater.openReleasePage(getApplication(), release)
+            appUpdateState.value = appUpdateState.value.copy(
+                message = "公式GitHub Releasesを開きました。APKの取得とインストールはAndroidの警告を確認して判断してください。"
+            )
+        } catch (error: Exception) {
+            appUpdateState.value = appUpdateState.value.copy(
+                message = "更新ページを開けません：" + (error.message ?: "ブラウザが利用できません")
+            )
         }
     }
 
