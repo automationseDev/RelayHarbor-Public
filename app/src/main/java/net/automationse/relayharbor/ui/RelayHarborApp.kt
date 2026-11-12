@@ -302,24 +302,29 @@ private fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             Surface(
-                color = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("すべての情報を、ひとつの場所に。",
-                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("AI・Bot・自分のメモをチャンネルごとに整理",
-                        style = MaterialTheme.typography.bodySmall)
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "マイワークスペース",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                        Text("＃ " + channels.size + " チャンネル", fontWeight = FontWeight.Medium)
-                        Text("● " + unreadCount + " 未読", fontWeight = FontWeight.Medium)
+                        Text("未読 $unreadCount 件", style = MaterialTheme.typography.bodyMedium)
+                        Text("チャンネル ${channels.size} 件", style = MaterialTheme.typography.bodyMedium)
                     }
-                    Text("Webhook・AI連携は設定または連携タブから利用できます。",
-                        style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        "アプリ・チャット・通知をここからすばやく開けます。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
+
+            QuickAppsSection()
 
             SectionHeading("最近のアクティビティ", "すべて見る", onAllActivity)
             if (activity.isEmpty()) {
