@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Extension
@@ -128,7 +129,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     LaunchedEffect(page) { uiStore.savePage(page) }
     LaunchedEffect(previousPage) { uiStore.savePreviousPage(previousPage) }
     LaunchedEffect(page, selectedId, navigationRestored) {
-        if (navigationRestored && page == "chat" && selectedId == null) {
+        if (navigationRestored && page == "chat" && vm.selectedChannelId.value == null) {
             page = previousPage
         }
     }
@@ -211,6 +212,8 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         uiStore.saveShowHomeChannels(it)
                     },
                     syncStatus = syncStatus,
+                    syncAvailable = settings.mode != "local" && tokenConfigured &&
+                        net.automationse.relayharbor.integration.RelayClient.validEndpoint(settings.endpoint),
                     onSync = vm::syncNow
                 )
                 "channels" -> ChannelListScreen(
@@ -364,6 +367,7 @@ private fun HomeScreen(
     onShowActivityChange: (Boolean) -> Unit,
     onShowChannelsChange: (Boolean) -> Unit,
     syncStatus: String,
+    syncAvailable: Boolean,
     onSync: () -> Unit
 ) {
     val unreadCount = summaries.values.sumOf { it.unreadCount }
@@ -422,14 +426,14 @@ private fun HomeScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    syncStatus,
+                    if (syncAvailable) syncStatus else "Relay未接続（設定から接続）",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                TextButton(onClick = onSync) { Text("今すぐ同期") }
+                TextButton(onClick = onSync, enabled = syncAvailable) { Text("今すぐ同期") }
             }
 
             if (showActivity) {
@@ -530,6 +534,13 @@ private fun ChannelListScreen(
                 onValueChange = onQueryChange,
                 placeholder = { Text("チャンネルを検索") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { onQueryChange("") }) {
+                            Icon(Icons.Default.Close, contentDescription = "検索をクリア")
+                        }
+                    }
+                },
                 singleLine = true,
                 shape = RoundedCornerShape(18.dp),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
@@ -684,6 +695,16 @@ private fun ActivityScreen(
                 },
                 placeholder = { Text("通知や送信元を検索") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = {
+                            query = ""
+                            uiStore.saveActivitySearch("")
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "検索をクリア")
+                        }
+                    }
+                },
                 singleLine = true,
                 shape = RoundedCornerShape(18.dp),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
