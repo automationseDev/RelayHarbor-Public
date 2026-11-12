@@ -295,8 +295,12 @@ fun IntegrationsScreen(
         )
     }
     credential?.let { created ->
+        var tokenCopied by remember(created.connection.id, created.token) {
+            mutableStateOf(false)
+        }
         AlertDialog(
-            onDismissRequest = onDismissCredential,
+            // Do not silently discard a freshly created one-time token.
+            onDismissRequest = {},
             title = { Text(if (created.connection.provider == "rss") "RSSを登録しました" else "連携を作成しました") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -318,12 +322,18 @@ fun IntegrationsScreen(
                             style = MaterialTheme.typography.bodySmall)
                         TextButton(onClick = {
                             clipboard.setText(AnnotatedString(created.token))
-                        }) { Text("専用トークンをコピー") }
+                            tokenCopied = true
+                        }) { Text(if (tokenCopied) "コピー済み" else "専用トークンをコピー") }
                     }
                 }
             },
             confirmButton = {
-                Button(onClick = onDismissCredential) { Text("完了") }
+                Button(
+                    onClick = onDismissCredential,
+                    enabled = created.token.isBlank() || tokenCopied
+                ) {
+                    Text(if (created.token.isBlank()) "完了" else "コピー済み・次へ")
+                }
             }
         )
     }
