@@ -1,5 +1,9 @@
 package net.automationse.relayharbor.ui
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,6 +38,9 @@ import androidx.compose.ui.unit.dp
 import net.automationse.relayharbor.data.ConnectionSettings
 import net.automationse.relayharbor.integration.RelayClient
 import net.automationse.relayharbor.integration.AppUpdater
+import net.automationse.relayharbor.notification.MessageNotifications
+import net.automationse.relayharbor.notification.NotificationPreferences
+import net.automationse.relayharbor.notification.NotificationSyncScheduler
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +68,18 @@ fun SettingsScreen(
     var token by remember { mutableStateOf("") }
     val valid = mode == "local" || RelayClient.validEndpoint(endpoint)
     val context = LocalContext.current
+    val notificationPrefs = remember(context) { NotificationPreferences(context) }
+    var notificationsEnabled by remember { mutableStateOf(notificationPrefs.enabled()) }
+    var backgroundEnabled by remember { mutableStateOf(notificationPrefs.backgroundEnabled()) }
+    var notificationPermission by remember {
+        mutableStateOf(MessageNotifications.hasPermission(context))
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        notificationPermission = MessageNotifications.hasPermission(context)
+        NotificationSyncScheduler.refresh(context)
+    }
 
     Scaffold(topBar = { TopAppBar(title = { Text("接続と設定") }) }) { inner ->
         Column(
@@ -126,6 +145,83 @@ fun SettingsScreen(
             }
             HorizontalDivider()
             Text(
+                "新着メッセージ通知",
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Androidの通知バーに表示")
+                            Text("Webhook・Botの新着通知とチャット返信に対応",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = notificationsEnabled, onCheckedChange = { enabled ->
+                            notificationsEnabled = enabled
+                            notificationPrefs.setEnabled(enabled)
+                            NotificationSyncScheduler.refresh(context)
+                            if (enabled && !MessageNotifications.hasPermission(context) &&
+                                Build.VERSION.SDK_INT >= 33
+                            ) {
+                                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        })
+                    }
+                    if (notificationsEnabled && !notificationPermission) {
+                        Text(
+                            "Android側の通知権限が未許可です。通知を有効にしてください。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        if (Build.VERSION.SDK_INT >= 33) {
+                            TextButton(onClick = {
+                                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }) { Text("通知の許可をリクエスト") }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("アプリを閉じている間も定期的に確認")
+                            Text("Android WorkManagerを使用。約15分以上の間隔で、バッテリー最適化などで遅れることがあります。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = backgroundEnabled,
+                            onCheckedChange = {
+                                backgroundEnabled = it
+                                notificationPrefs.setBackgroundEnabled(it)
+                                NotificationSyncScheduler.refresh(context)
+                            }
+                        )
+                    }
+                    Text(
+                        "即時プッシュ（FCM）は未設定です。起動中は約30秒ごとに同期し、終了後はAndroidの定期処理で通知します。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TextButton(onClick = { MessageNotifications.openAppSettings(context) }) {
+                        Text("Androidの通知音・振動などを設定")
+                    }
+                    Text(
+                        "個別チャンネルの通知ON/OFFと通知音・振動は「チャット」→各チャンネルの︙から設定できます。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            HorizontalDivider()
+            Text(
                 "表示設定",
                 fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleMedium
@@ -180,7 +276,7 @@ fun SettingsScreen(
                     Text("RelayHarbor v" + AppUpdater.installedVersion(context), fontWeight = FontWeight.SemiBold)
                     Text("AIのAPIキーはアプリではなく中継サーバーの環境変数で管理します。チャットでの送信時に選択したAIへ接続します。",
                         style = MaterialTheme.typography.bodySmall)
-                    Text("Webhook通知はサーバーに保存され、アプリ使用中に約30秒間隔で取得します。バックグラウンドの即時Push通知には未対応です。",
+                    Text("Webhook通知はサーバーに保存され、アプリ使用中は約30秒ごとに取得します。バックグラウンドは15分以上の定期同期を利用できます。",
                         style = MaterialTheme.typography.bodySmall)
                     Text(syncStatus, style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary)

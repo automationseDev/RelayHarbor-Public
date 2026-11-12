@@ -1,6 +1,18 @@
 package net.automationse.relayharbor
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import net.automationse.relayharbor.notification.EXTRA_OPEN_CHANNEL_ID
+import net.automationse.relayharbor.notification.MessageNotifications
+import net.automationse.relayharbor.notification.NotificationOpenRequests
+import net.automationse.relayharbor.notification.NotificationPreferences
+import net.automationse.relayharbor.notification.NotificationSyncScheduler
+import net.automationse.relayharbor.notification.VisibleChat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -12,12 +24,57 @@ import androidx.compose.ui.graphics.Color
 import net.automationse.relayharbor.ui.RelayHarborApp
 
 class MainActivity : ComponentActivity() {
+    private val requestNotifications = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        NotificationSyncScheduler.refresh(this)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        onOpenIntent(intent)
         setContent {
             RelayTheme {
                 RelayHarborApp()
             }
+        }
+        NotificationSyncScheduler.refresh(this)
+        if (Build.VERSION.SDK_INT >= 33) {
+            val prefs = NotificationPreferences(this)
+            if (prefs.enabled() && !prefs.requestedRuntimePermission() &&
+                ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                prefs.markPermissionRequested()
+                requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        onOpenIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        VisibleChat.appVisible = true
+        NotificationSyncScheduler.refresh(this)
+    }
+
+    override fun onPause() {
+        VisibleChat.appVisible = false
+        super.onPause()
+    }
+
+    private fun onOpenIntent(intent: Intent?) {
+        if (intent?.hasExtra(EXTRA_OPEN_CHANNEL_ID) == true) {
+            NotificationOpenRequests.offer(intent.getLongExtra(EXTRA_OPEN_CHANNEL_ID, 0L))
+            // Consume the activity intent extra so a later recreation does not
+            // navigate to an old notification again.
+            intent.removeExtra(EXTRA_OPEN_CHANNEL_ID)
         }
     }
 }
