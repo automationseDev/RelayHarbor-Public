@@ -62,6 +62,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,13 +74,21 @@ import net.automationse.relayharbor.data.MessageEntity
 
 @Composable
 fun RelayHarborApp(vm: HubViewModel = viewModel()) {
-    var page by rememberSaveable { mutableStateOf("home") }
-    var previousPage by rememberSaveable { mutableStateOf("channels") }
+    val context = LocalContext.current
+    val uiStore = remember(context) { WorkspaceUiStore(context) }
+    var page by rememberSaveable {
+        mutableStateOf(if (uiStore.resumeLastPage()) uiStore.lastPage() else "home")
+    }
+    var previousPage by rememberSaveable { mutableStateOf(uiStore.previousPage()) }
+    var navigationRestored by remember { mutableStateOf(false) }
+    var resumeLastPage by remember { mutableStateOf(uiStore.resumeLastPage()) }
+    var showHomeActivity by remember { mutableStateOf(uiStore.showHomeActivity()) }
+    var showHomeChannels by remember { mutableStateOf(uiStore.showHomeChannels()) }
     var showCreate by rememberSaveable { mutableStateOf(false) }
     var channelNameDraft by rememberSaveable { mutableStateOf("") }
     val pageStates = rememberSaveableStateHolder()
-    var channelQuery by rememberSaveable { mutableStateOf("") }
-    var channelFilter by rememberSaveable { mutableStateOf("all") }
+    var channelQuery by rememberSaveable { mutableStateOf(uiStore.channelSearch()) }
+    var channelFilter by rememberSaveable { mutableStateOf(uiStore.channelListFilter()) }
     val channels by vm.channels.collectAsState()
     val summaries by vm.channelSummaries.collectAsState()
     val activity by vm.activity.collectAsState()
@@ -106,8 +115,22 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
             }
         }
     }
-    LaunchedEffect(page, selectedId) {
-        if (page == "chat" && selectedId == null) page = "channels"
+    // A new process has no saved ViewModel channel; restore it before applying
+    // the usual "chat without channel" fallback.
+    LaunchedEffect(Unit) {
+        if (page == "chat" && selectedId == null) {
+            val savedId = uiStore.lastChatId()
+            if (savedId > 0) vm.selectChannel(savedId)
+            else page = previousPage
+        }
+        navigationRestored = true
+    }
+    LaunchedEffect(page) { uiStore.savePage(page) }
+    LaunchedEffect(previousPage) { uiStore.savePreviousPage(previousPage) }
+    LaunchedEffect(page, selectedId, navigationRestored) {
+        if (navigationRestored && page == "chat" && selectedId == null) {
+            page = previousPage
+        }
     }
     LaunchedEffect(page, settings.endpoint, tokenConfigured) {
         if (page == "integrations") vm.refreshIntegrations()
@@ -116,7 +139,8 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     val unreadCount = summaries.sumOf { it.unreadCount }
 
     fun openChannel(id: Long) {
-        previousPage = page
+        if (page != "chat") previousPage = page
+        uiStore.saveLastChatId(id)
         vm.selectChannel(id)
         page = "chat"
     }
@@ -175,15 +199,33 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     activity = activity,
                     onOpen = ::openChannel,
                     onAllChannels = { page = "channels" },
-                    onAllActivity = { page = "activity" }
+                    onAllActivity = { page = "activity" },
+                    showActivity = showHomeActivity,
+                    showChannels = showHomeChannels,
+                    onShowActivityChange = {
+                        showHomeActivity = it
+                        uiStore.saveShowHomeActivity(it)
+                    },
+                    onShowChannelsChange = {
+                        showHomeChannels = it
+                        uiStore.saveShowHomeChannels(it)
+                    },
+                    syncStatus = syncStatus,
+                    onSync = vm::syncNow
                 )
                 "channels" -> ChannelListScreen(
                     channels = channels,
                     summaries = summaryById,
                     query = channelQuery,
-                    onQueryChange = { channelQuery = it },
+                    onQueryChange = {
+                        channelQuery = it
+                        uiStore.saveChannelSearch(it)
+                    },
                     filter = channelFilter,
-                    onFilterChange = { channelFilter = it },
+                    onFilterChange = {
+                        channelFilter = it
+                        uiStore.saveChannelListFilter(it)
+                    },
                     onSelect = ::openChannel,
                     onAdd = { showCreate = true },
                     onDelete = vm::deleteChannel
@@ -238,7 +280,22 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     onSync = vm::syncNow,
                     updateState = appUpdateState,
                     onCheckUpdate = vm::checkAppUpdate,
-                    onOpenUpdatePage = vm::openAppUpdatePage
+                    onOpenUpdatePage = vm::openAppUpdatePage,
+                    resumeLastPage = resumeLastPage,
+                    onResumeLastPageChange = {
+                        resumeLastPage = it
+                        uiStore.setResumeLastPage(it)
+                    },
+                    showHomeActivity = showHomeActivity,
+                    onShowHomeActivityChange = {
+                        showHomeActivity = it
+                        uiStore.saveShowHomeActivity(it)
+                    },
+                    showHomeChannels = showHomeChannels,
+                    onShowHomeChannelsChange = {
+                        showHomeChannels = it
+                        uiStore.saveShowHomeChannels(it)
+                    }
                 )
             }
             }
@@ -301,7 +358,13 @@ private fun HomeScreen(
     activity: List<MessageEntity>,
     onOpen: (Long) -> Unit,
     onAllChannels: () -> Unit,
-    onAllActivity: () -> Unit
+    onAllActivity: () -> Unit,
+    showActivity: Boolean,
+    showChannels: Boolean,
+    onShowActivityChange: (Boolean) -> Unit,
+    onShowChannelsChange: (Boolean) -> Unit,
+    syncStatus: String,
+    onSync: () -> Unit
 ) {
     val unreadCount = summaries.values.sumOf { it.unreadCount }
     val recentChannels = channels.sortedWith(
@@ -338,6 +401,38 @@ private fun HomeScreen(
 
             QuickAppsSection()
 
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                FilterChip(
+                    selected = showActivity,
+                    onClick = { onShowActivityChange(!showActivity) },
+                    label = { Text("最近の通知") }
+                )
+                FilterChip(
+                    selected = showChannels,
+                    onClick = { onShowChannelsChange(!showChannels) },
+                    label = { Text("チャンネル") }
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    syncStatus,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                TextButton(onClick = onSync) { Text("今すぐ同期") }
+            }
+
+            if (showActivity) {
             SectionHeading("最近のアクティビティ", "すべて見る", onAllActivity)
             if (activity.isEmpty()) {
                 EmptyHint("Botからの通知は、ここにまとまります。")
@@ -350,6 +445,8 @@ private fun HomeScreen(
                 }
             }
 
+            }
+            if (showChannels) {
             SectionHeading("チャンネル", "一覧へ", onAllChannels)
             if (recentChannels.isEmpty()) {
                 EmptyHint("チャンネルを作成して、通知や会話を整理しましょう。")
@@ -366,6 +463,7 @@ private fun HomeScreen(
                         )
                     }
                 }
+            }
             }
             Spacer(Modifier.height(10.dp))
         }
