@@ -62,7 +62,7 @@ internal object ThumbnailFetcher {
         }
         if (address is Inet6Address) {
             val first = raw[0].toInt() and 255
-            if (first and 0xfe == 0xfc) return false // IPv6 unique-local
+            if ((first and 0xfe) == 0xfc) return false // IPv6 unique-local
         }
         return true
     }
