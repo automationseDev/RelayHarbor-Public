@@ -22,6 +22,8 @@ import net.automationse.relayharbor.integration.IntegrationConnection
 import net.automationse.relayharbor.integration.IntegrationCredential
 import net.automationse.relayharbor.integration.AppRelease
 import net.automationse.relayharbor.integration.AppUpdater
+import net.automationse.relayharbor.notification.RelayEventSync
+import net.automationse.relayharbor.notification.MessageNotifications
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -126,7 +128,11 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
                     config.endpoint, token, config.aiProvider,
                     cleaned, conversationId, history
                 )
-                repository.addAiReply(id, config.aiProvider, result.answer)
+                val replyId = repository.addAiReply(id, config.aiProvider, result.answer)
+                if (currentChannel.value != id) {
+                    val name = channels.value.firstOrNull { it.id == id }?.name ?: "AIチャット"
+                    MessageNotifications.showAiReply(getApplication(), replyId, id, name, result.answer)
+                }
                 if (config.aiProvider == "dify" && result.conversationId.isNotBlank()) {
                     conversationStore.save(
                         config.endpoint, config.aiProvider, id, result.conversationId
@@ -147,24 +153,9 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             if (syncMutex.isLocked) return@launch
             syncMutex.withLock {
-                val config = connectionStore.settings.first()
-                val token = secretStore.getToken()
-                if (config.mode == "local" || token == null ||
-                    !RelayClient.validEndpoint(config.endpoint)) {
-                    syncStatus.value = "サーバー接続先・トークン未設定"
-                    return@withLock
-                }
                 syncStatus.value = "同期中…"
                 try {
-                    val source = config.endpoint.trim().trimEnd('/')
-                    var newCount = 0
-                    for (page in 0 until 5) {
-                        val after = repository.lastInboundSequence(source)
-                        val events = relayClient.loadEvents(source, token, after)
-                        if (events.isEmpty()) break
-                        newCount += repository.importRelayEvents(source, events)
-                        if (events.size < 100) break
-                    }
+                    val newCount = RelayEventSync.perform(getApplication())
                     syncStatus.value = "同期完了：新着 $newCount 件"
                 } catch (error: Exception) {
                     syncStatus.value = "同期エラー：" + (error.message ?: "通信に失敗しました")
