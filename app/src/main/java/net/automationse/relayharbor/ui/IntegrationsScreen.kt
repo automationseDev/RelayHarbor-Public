@@ -23,6 +23,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,6 +53,9 @@ fun IntegrationsScreen(
     connections: List<IntegrationConnection>,
     status: String,
     credential: IntegrationCredential?,
+    transferBusy: Boolean,
+    onExport: (Uri) -> Unit,
+    onImport: (Uri) -> Unit,
     onRefresh: () -> Unit,
     onAdd: (String, String, String, Int, String, String, Int) -> Unit,
     onEdit: (IntegrationConnection) -> Unit,
@@ -59,6 +65,12 @@ fun IntegrationsScreen(
     onDelete: (String) -> Unit,
     onDismissCredential: () -> Unit
 ) {
+    val exportPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let(onExport) }
+    val importPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(onImport) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var createOpen by rememberSaveable { mutableStateOf(false) }
@@ -106,11 +118,33 @@ fun IntegrationsScreen(
                         style = MaterialTheme.typography.bodySmall
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = { createOpen = true }, enabled = configured) {
+                        Button(onClick = { createOpen = true }, enabled = configured && !transferBusy) {
                             Text("＋ 連携先を追加")
                         }
-                        TextButton(onClick = onRefresh, enabled = configured) { Text("更新") }
+                        TextButton(onClick = onRefresh, enabled = configured && !transferBusy) {
+                            Text("更新")
+                        }
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            onClick = {
+                                exportPicker.launch("relayharbor-integrations.json")
+                            },
+                            enabled = configured && !transferBusy
+                        ) { Text("設定をエクスポート") }
+                        TextButton(
+                            onClick = {
+                                importPicker.launch(arrayOf("application/json", "text/plain"))
+                            },
+                            enabled = configured && !transferBusy
+                        ) { Text("設定をインポート") }
+                    }
+                    Text(
+                        if (transferBusy) "連携設定の転送中です…"
+                        else "JSONで連携名・通知先・フィルター・RSS設定を移行。認証トークンは含めません。インポートでは新規Webhookのトークンを再発行します。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             OutlinedTextField(
