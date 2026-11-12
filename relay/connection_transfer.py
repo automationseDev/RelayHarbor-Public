@@ -19,7 +19,7 @@ from typing import Literal
 router = APIRouter()
 FORMAT = "relayharbor-integrations"
 VERSION = 1
-MAX_ITEMS = 50
+MAX_ITEMS = 200
 
 
 def _server():
@@ -157,6 +157,10 @@ def import_connections(
                     "provider": item.provider,
                     "channel_name": item.channel_name,
                     "enabled": item.enabled,
+                    "min_score": item.min_score,
+                    "keyword": item.keyword,
+                    "feed_url": item.feed_url,
+                    "poll_interval_minutes": item.poll_interval_minutes,
                     "path": "/v1/inbound/" + connection_id if secret else "",
                     "token": secret,
                 })
