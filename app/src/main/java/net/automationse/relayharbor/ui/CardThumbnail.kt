@@ -80,7 +80,7 @@ internal object ThumbnailFetcher {
             connection.connectTimeout = 5000
             connection.readTimeout = 8000
             connection.instanceFollowRedirects = false
-            connection.setRequestProperty("Accept", "image/avif,image/webp,image/png,image/jpeg,image/gif")
+            connection.setRequestProperty("Accept", "image/webp,image/png,image/jpeg,image/gif")
             try {
                 if (connection.responseCode != 200) return@runCatching null
                 val type = connection.contentType?.substringBefore(';')?.trim()?.lowercase()
