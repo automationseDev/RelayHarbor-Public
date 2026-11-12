@@ -20,6 +20,7 @@ import time
 from urllib.parse import urljoin, urlsplit
 
 import feedparser
+import image_metadata
 import httpx
 from fastapi import APIRouter, Header, HTTPException
 
@@ -321,6 +322,9 @@ async def refresh(connection_id: str, force: bool = False):
                     }
                     if link:
                         card["url"] = link
+                    thumbnail_url = image_metadata.rss_entry_thumbnail(entry)
+                    if thumbnail_url:
+                        card["thumbnail_url"] = thumbnail_url
                     result = _connections()._insert_event(
                         db, source, "rss-" + key, title,
                         article_title, card
