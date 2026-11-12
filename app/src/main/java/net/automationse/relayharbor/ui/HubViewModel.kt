@@ -1,6 +1,10 @@
 package net.automationse.relayharbor.ui
 
 import android.app.Application
+import android.net.Uri
+import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import net.automationse.relayharbor.data.ChannelEntity
@@ -69,6 +73,8 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     val integrations = MutableStateFlow<List<IntegrationConnection>>(emptyList())
     val integrationStatus = MutableStateFlow("接続先を設定してください")
     val newIntegrationCredential = MutableStateFlow<IntegrationCredential?>(null)
+    val integrationTransferBusy = MutableStateFlow(false)
+    private val pendingImportedCredentials = ArrayDeque<IntegrationCredential>()
     val busyChannelId = MutableStateFlow<Long?>(null)
     val appUpdateState = MutableStateFlow(AppUpdateState())
 
@@ -232,6 +238,68 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun exportIntegrationSettings(uri: Uri) {
+        if (integrationTransferBusy.value) return
+        integrationTransferBusy.value = true
+        viewModelScope.launch {
+            try {
+                val (endpoint, token) = integrationAuth()
+                val data = integrationClient.exportJson(endpoint, token)
+                withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    val output = resolver.openOutputStream(uri, "w")
+                        ?: error("保存先のファイルを開けません")
+                    output.buffered().use { it.write(data.toByteArray(Charsets.UTF_8)) }
+                }
+                integrationStatus.value = "連携設定をJSONファイルに保存しました（トークンは含まれません）"
+            } catch (error: Exception) {
+                integrationStatus.value = "エクスポート失敗：" + (error.message ?: "ファイル保存エラー")
+            } finally {
+                integrationTransferBusy.value = false
+            }
+        }
+    }
+
+    fun importIntegrationSettings(uri: Uri) {
+        if (integrationTransferBusy.value) return
+        integrationTransferBusy.value = true
+        viewModelScope.launch {
+            try {
+                val document = withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    val input = resolver.openInputStream(uri)
+                        ?: error("設定ファイルを開けません")
+                    val buffer = ByteArray(8192)
+                    val result = ByteArrayOutputStream()
+                    input.use { source ->
+                        while (true) {
+                            val count = source.read(buffer)
+                            if (count < 0) break
+                            require(result.size() + count <= 256_000) {
+                                "ファイルが大きすぎます（上限256KB）"
+                            }
+                            result.write(buffer, 0, count)
+                        }
+                    }
+                    result.toString(Charsets.UTF_8.name())
+                }
+                val (endpoint, token) = integrationAuth()
+                val summary = integrationClient.importJson(endpoint, token, document)
+                integrations.value = integrationClient.list(endpoint, token)
+                pendingImportedCredentials.addAll(summary.credentials)
+                if (newIntegrationCredential.value == null && pendingImportedCredentials.isNotEmpty()) {
+                    newIntegrationCredential.value = pendingImportedCredentials.removeFirst()
+                }
+                integrationStatus.value = "インポート完了：新規${summary.createdCount}件、重複スキップ${summary.skippedCount}件。" +
+                    if (summary.credentials.isNotEmpty()) "Webhookトークンをすべてコピーしてください。" else ""
+            } catch (error: Exception) {
+                integrationStatus.value = "インポート失敗：" + (error.message ?: "設定ファイルを確認してください")
+            } finally {
+                integrationTransferBusy.value = false
+            }
+        }
+    }
+
     fun updateIntegration(connection: IntegrationConnection) {
         viewModelScope.launch {
             try {
@@ -341,7 +409,9 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun closeCredential() {
-        newIntegrationCredential.value = null
+        newIntegrationCredential.value = if (pendingImportedCredentials.isNotEmpty()) {
+            pendingImportedCredentials.removeFirst()
+        } else null
     }
 
 }
