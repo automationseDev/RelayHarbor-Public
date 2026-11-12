@@ -329,7 +329,7 @@ fun SettingsScreen(
                     Text("RelayHarbor v" + AppUpdater.installedVersion(context), fontWeight = FontWeight.SemiBold)
                     Text("AIのAPIキーはアプリではなく中継サーバーの環境変数で管理します。チャットでの送信時に選択したAIへ接続します。",
                         style = MaterialTheme.typography.bodySmall)
-                    Text("Webhook通知はサーバーに保存され、アプリ使用中は約30秒ごとに取得します。バックグラウンドは15分以上の定期同期を利用できます。",
+                    Text("Webhook通知はサーバーに保存され、アプリ表示中は選択した同期間隔（${foregroundSyncSeconds}秒）で取得します。バックグラウンドは15分以上の定期同期を利用できます。",
                         style = MaterialTheme.typography.bodySmall)
                     Text(syncStatus, style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary)
