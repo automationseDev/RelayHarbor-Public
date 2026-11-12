@@ -4,6 +4,16 @@ import kotlinx.coroutines.flow.Flow
 import net.automationse.relayharbor.integration.IncomingRelayEvent
 import net.automationse.relayharbor.integration.RelayChatTurn
 
+data class ImportedRelayMessage(
+    val source: String,
+    val sequence: Long,
+    val channelId: Long,
+    val channelName: String,
+    val sender: String,
+    val text: String,
+    val timestamp: Long
+)
+
 class HubRepository(private val dao: HubDao) {
     val channels: Flow<List<ChannelEntity>> = dao.observeChannels()
     val channelSummaries: Flow<List<ChannelSummary>> = dao.observeChannelSummaries()
@@ -48,8 +58,8 @@ class HubRepository(private val dao: HubDao) {
     suspend fun importRelayEvents(
         source: String,
         events: List<IncomingRelayEvent>
-    ): Int {
-        var added = 0
+    ): List<ImportedRelayMessage> {
+        val newlyInserted = mutableListOf<ImportedRelayMessage>()
         events.sortedBy { it.sequence }.forEach { event ->
             val name = event.channel.ifBlank { "Webhook" }.take(60)
             val channel = dao.findChannelByName(name)
@@ -69,10 +79,18 @@ class HubRepository(private val dao: HubDao) {
                     InboundEventEntity(source, event.sequence), message
                 )
             ) {
-                added++
+                newlyInserted.add(ImportedRelayMessage(
+                    source = source,
+                    sequence = event.sequence,
+                    channelId = channel.id,
+                    channelName = channel.name,
+                    sender = event.sender,
+                    text = event.text,
+                    timestamp = event.timestamp
+                ))
             }
         }
-        return added
+        return newlyInserted
     }
 
     suspend fun chatHistory(channelId: Long): List<RelayChatTurn> =
@@ -81,8 +99,8 @@ class HubRepository(private val dao: HubDao) {
             .takeLast(12)
             .map { RelayChatTurn(if (it.fromMe) "user" else "assistant", it.text) }
 
-    suspend fun addAiReply(channelId: Long, provider: String, message: String) {
-        dao.insertMessage(MessageEntity(
+    suspend fun addAiReply(channelId: Long, provider: String, message: String): Long {
+        return dao.insertMessage(MessageEntity(
             channelId = channelId,
             sender = if (provider == "dify") "Dify" else "OpenAI",
             text = message.take(12000),
