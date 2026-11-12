@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Close
@@ -81,8 +82,13 @@ import net.automationse.relayharbor.notification.VisibleChat
 fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     val context = LocalContext.current
     val uiStore = remember(context) { WorkspaceUiStore(context) }
+    val defaultHome by DefaultHomeRole.active.collectAsState()
+    val homeRequested by HomeLauncherRequests.requested.collectAsState()
     var page by rememberSaveable {
-        mutableStateOf(if (uiStore.resumeLastPage()) uiStore.lastPage() else "home")
+        mutableStateOf(
+            if (HomeLauncherRequests.requested.value) "home"
+            else if (uiStore.resumeLastPage()) uiStore.lastPage() else "home"
+        )
     }
     var previousPage by rememberSaveable { mutableStateOf(uiStore.previousPage()) }
     var navigationRestored by remember { mutableStateOf(false) }
@@ -132,6 +138,15 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
         }
         navigationRestored = true
     }
+    // Every Android HOME invocation returns to the launcher's root screen;
+    // opening RelayHarbor from its normal icon keeps the user's last screen.
+    LaunchedEffect(homeRequested) {
+        if (homeRequested) {
+            vm.leaveChannel()
+            page = "home"
+            HomeLauncherRequests.consume()
+        }
+    }
     LaunchedEffect(page) { uiStore.savePage(page) }
     LaunchedEffect(previousPage) { uiStore.savePreviousPage(previousPage) }
     LaunchedEffect(page, selectedId, navigationRestored) {
@@ -178,6 +193,13 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     }
 
     BackHandler(enabled = page == "chat") { closeChat() }
+    // As system HOME, Back navigates to the root rather than exiting the launcher.
+    BackHandler(enabled = defaultHome && page != "home" && page != "chat") {
+        page = "home"
+    }
+    BackHandler(enabled = defaultHome && page == "home") {
+        // A HOME activity has no parent screen.
+    }
 
     Scaffold(
         bottomBar = {
@@ -396,6 +418,7 @@ private fun HomeScreen(
     syncAvailable: Boolean,
     onSync: () -> Unit
 ) {
+    var appDrawerOpen by rememberSaveable { mutableStateOf(false) }
     val unreadCount = summaries.values.sumOf { it.unreadCount }
     val recentChannels = channels.sortedWith(
         compareByDescending<ChannelEntity> { summaries[it.id]?.lastTimestamp ?: 0L }.thenBy { it.position }
@@ -429,6 +452,14 @@ private fun HomeScreen(
                 }
             }
 
+            Button(
+                onClick = { appDrawerOpen = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Apps, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("すべてのアプリを開く")
+            }
             QuickAppsSection()
 
             Row(
@@ -497,6 +528,9 @@ private fun HomeScreen(
             }
             Spacer(Modifier.height(10.dp))
         }
+    }
+    if (appDrawerOpen) {
+        HomeAllAppsDrawer(onDismiss = { appDrawerOpen = false })
     }
 }
 
