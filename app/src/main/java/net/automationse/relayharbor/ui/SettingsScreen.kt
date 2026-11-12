@@ -52,6 +52,8 @@ fun SettingsScreen(
     onSave: (String, String, String, String) -> Unit,
     onClearToken: () -> Unit,
     onSync: () -> Unit,
+    foregroundSyncSeconds: Int,
+    onForegroundSyncSecondsChange: (Int) -> Unit,
     updateState: AppUpdateState,
     onCheckUpdate: () -> Unit,
     onOpenUpdatePage: () -> Unit,
@@ -206,7 +208,31 @@ fun SettingsScreen(
                         )
                     }
                     Text(
-                        "即時プッシュ（FCM）は未設定です。起動中は約30秒ごとに同期し、終了後はAndroidの定期処理で通知します。",
+                        "アプリ画面を表示している間の同期間隔",
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(
+                            30 to "30秒",
+                            60 to "1分",
+                            120 to "2分",
+                            300 to "5分"
+                        ).forEach { (seconds, label) ->
+                            FilterChip(
+                                selected = foregroundSyncSeconds == seconds,
+                                onClick = { onForegroundSyncSecondsChange(seconds) },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+                    Text(
+                        "ホームアプリとして使う場合は1〜2分がおすすめです。画面非表示中は上記の短い間隔で同期せず、バックグラウンド定期確認へ切り替わります。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "即時プッシュ（FCM）は未設定です。アプリ表示中は指定間隔で、非表示時はAndroidによる15分以上の定期確認を利用します（遅延する場合があります）。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -26,6 +26,11 @@ internal class WorkspaceUiStore(context: Context) {
         fun channelFilter(value: String?): String = safeFilter(value, channelFilters)
         fun activityFilter(value: String?): String = safeFilter(value, activityFilters)
         fun integrationFilter(value: String?): String = safeFilter(value, integrationFilters)
+        fun integrationCardMode(value: String?): String =
+            value?.takeIf { it == "compact" } ?: "normal"
+
+        fun safeForegroundSyncSeconds(value: Int): Int =
+            value.takeIf { it in setOf(30, 60, 120, 300) } ?: 30
     }
 
     fun resumeLastPage(): Boolean = preferences.getBoolean("resume_last_page", true)
@@ -86,6 +91,24 @@ internal class WorkspaceUiStore(context: Context) {
     )
     fun saveIntegrationListFilter(value: String) {
         preferences.edit().putString("integration_filter", integrationFilter(value)).apply()
+    }
+
+    fun integrationCardLayout(): String = integrationCardMode(
+        preferences.getString("integration_card_layout", "normal")
+    )
+    fun saveIntegrationCardLayout(value: String) {
+        preferences.edit()
+            .putString("integration_card_layout", integrationCardMode(value))
+            .apply()
+    }
+
+    fun foregroundSyncSeconds(): Int = safeForegroundSyncSeconds(
+        preferences.getInt("foreground_sync_seconds", 30)
+    )
+    fun saveForegroundSyncSeconds(value: Int) {
+        preferences.edit()
+            .putInt("foreground_sync_seconds", safeForegroundSyncSeconds(value))
+            .apply()
     }
 
     fun showHomeActivity(): Boolean = preferences.getBoolean("show_home_activity", true)
