@@ -221,6 +221,7 @@ fun SettingsScreen(
                 }
             }
             HorizontalDivider()
+            DefaultHomeSettings()
             Text(
                 "表示設定",
                 fontWeight = FontWeight.Bold,

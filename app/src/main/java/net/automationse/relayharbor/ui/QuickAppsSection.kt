@@ -107,7 +107,7 @@ internal fun moveFavoriteApp(items: List<String>, key: String, offset: Int): Lis
     }
 }
 
-private data class LaunchableApp(
+internal data class LaunchableApp(
     val component: ComponentName,
     val label: String,
     val resolveInfo: ResolveInfo
@@ -115,7 +115,7 @@ private data class LaunchableApp(
     val key: String get() = component.flattenToString()
 }
 
-private fun queryLaunchableApps(context: Context): List<LaunchableApp> {
+internal fun queryLaunchableApps(context: Context): List<LaunchableApp> {
     val manager = context.packageManager
     val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
     val matches = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -139,7 +139,7 @@ private fun queryLaunchableApps(context: Context): List<LaunchableApp> {
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
 }
 
-private fun launchFavoriteApp(context: Context, app: LaunchableApp) {
+internal fun launchFavoriteApp(context: Context, app: LaunchableApp) {
     val intent = Intent(Intent.ACTION_MAIN).apply {
         addCategory(Intent.CATEGORY_LAUNCHER)
         component = app.component
@@ -151,7 +151,7 @@ private fun launchFavoriteApp(context: Context, app: LaunchableApp) {
 }
 
 @Composable
-private fun InstalledAppIcon(app: LaunchableApp, size: Dp) {
+internal fun InstalledAppIcon(app: LaunchableApp, size: Dp) {
     val context = LocalContext.current
     val image = remember(app.key) {
         runCatching {
@@ -186,7 +186,7 @@ private fun FavoriteAppTile(app: LaunchableApp, onClick: () -> Unit) {
     }
 }
 
-/** This is an in-app shortcut grid, not an Android default HOME replacement. */
+/** Favorite shortcuts shared by the in-app dashboard and optional system HOME. */
 @Composable
 internal fun QuickAppsSection() {
     val context = LocalContext.current

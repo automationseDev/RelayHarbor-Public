@@ -22,6 +22,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import net.automationse.relayharbor.ui.RelayHarborApp
+import net.automationse.relayharbor.ui.DefaultHomeRole
+import net.automationse.relayharbor.ui.HomeLauncherRequests
 
 class MainActivity : ComponentActivity() {
     private val requestNotifications = registerForActivityResult(
@@ -61,6 +63,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         VisibleChat.appVisible = true
+        DefaultHomeRole.refresh(this)
         NotificationSyncScheduler.refresh(this)
     }
 
@@ -70,6 +73,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun onOpenIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)) {
+            HomeLauncherRequests.openHome()
+            // Do not re-run HOME navigation after a configuration recreation.
+            intent.removeCategory(Intent.CATEGORY_HOME)
+            return
+        }
         if (intent?.hasExtra(EXTRA_OPEN_CHANNEL_ID) == true) {
             NotificationOpenRequests.offer(intent.getLongExtra(EXTRA_OPEN_CHANNEL_ID, 0L))
             // Consume the activity intent extra so a later recreation does not
