@@ -58,6 +58,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,6 +76,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     var page by rememberSaveable { mutableStateOf("home") }
     var previousPage by rememberSaveable { mutableStateOf("channels") }
     var showCreate by rememberSaveable { mutableStateOf(false) }
+    val pageStates = rememberSaveableStateHolder()
     var channelQuery by rememberSaveable { mutableStateOf("") }
     var channelFilter by rememberSaveable { mutableStateOf("all") }
     val channels by vm.channels.collectAsState()
@@ -160,6 +162,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
         }
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
+            pageStates.SaveableStateProvider(page) {
             when (page) {
                 "home" -> HomeScreen(
                     channels = channels,
@@ -225,6 +228,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     onCheckUpdate = vm::checkAppUpdate,
                     onOpenUpdatePage = vm::openAppUpdatePage
                 )
+            }
             }
         }
     }
