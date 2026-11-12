@@ -1,6 +1,12 @@
 name: Publish Relay Docker Image (GHCR)
 
 on:
+  # Publish the matching stable Relay image after a successful signed Android release.
+  workflow_run:
+    workflows:
+      - Signed APK Release
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       channel:
@@ -21,6 +27,12 @@ concurrency:
 
 jobs:
   publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -31,12 +43,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Validate tag and select image channel
         id: image
         shell: bash
         env:
           SELECTED_CHANNEL: ${{ inputs.channel }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           owner="${GITHUB_REPOSITORY_OWNER,,}"
@@ -46,7 +60,8 @@ jobs:
             echo "::error::Cannot determine Android app versionName"; exit 1;
           }
           release_tag="v$version"
-          short_sha="${GITHUB_SHA:0:12}"
+          source_sha="$(git rev-parse HEAD)"
+          short_sha="${source_sha:0:12}"
 
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             tag="${GITHUB_REF#refs/tags/}"
@@ -56,6 +71,17 @@ jobs:
             git fetch --no-tags origin main
             git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main || {
               echo "::error::Release tag must reference a commit in main"; exit 1;
+            }
+            channel=release
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_run ]]; then
+            # Only the exact successful signed release commit may publish stable.
+            git fetch --tags origin
+            tagged_commit="$(git rev-parse --verify "refs/tags/$release_tag^{commit}")"
+            [[ "$tagged_commit" == "$source_sha" ]] || {
+              echo "::error::Signed release tag does not match the tested commit"; exit 1;
+            }
+            gh release view "$release_tag" >/dev/null || {
+              echo "::error::Signed GitHub Release was not published"; exit 1;
             }
             channel=release
           elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
