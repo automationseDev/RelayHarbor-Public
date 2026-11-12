@@ -133,6 +133,15 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
             page = previousPage
         }
     }
+    // A channel may have been deleted since the previous launch.
+    // Wait for the first real non-empty Room channel snapshot, then recover.
+    LaunchedEffect(navigationRestored, page, selectedId, channels) {
+        if (navigationRestored && page == "chat" && selectedId != null &&
+            channels.isNotEmpty() && channels.none { it.id == selectedId }) {
+            vm.leaveChannel()
+            page = previousPage
+        }
+    }
     LaunchedEffect(page, settings.endpoint, tokenConfigured) {
         if (page == "integrations") vm.refreshIntegrations()
     }
