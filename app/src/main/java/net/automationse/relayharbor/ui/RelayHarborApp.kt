@@ -72,6 +72,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import net.automationse.relayharbor.data.ChannelEntity
 import net.automationse.relayharbor.data.ChannelSummary
 import net.automationse.relayharbor.data.MessageEntity
+import net.automationse.relayharbor.notification.NotificationOpenRequests
+import net.automationse.relayharbor.notification.NotificationPreferences
+import net.automationse.relayharbor.notification.MessageNotifications
+import net.automationse.relayharbor.notification.VisibleChat
 
 @Composable
 fun RelayHarborApp(vm: HubViewModel = viewModel()) {
@@ -94,6 +98,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     val summaries by vm.channelSummaries.collectAsState()
     val activity by vm.activity.collectAsState()
     val selectedId by vm.selectedChannelId.collectAsState()
+    val notificationTarget by NotificationOpenRequests.channelId.collectAsState()
     val messages by vm.messages.collectAsState()
     val settings by vm.connectionSettings.collectAsState()
     val saveError by vm.saveError.collectAsState()
@@ -119,7 +124,8 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     // A new process has no saved ViewModel channel; restore it before applying
     // the usual "chat without channel" fallback.
     LaunchedEffect(Unit) {
-        if (page == "chat" && selectedId == null) {
+        if (NotificationOpenRequests.channelId.value == null &&
+            page == "chat" && selectedId == null) {
             val savedId = uiStore.lastChatId()
             if (savedId > 0) vm.selectChannel(savedId)
             else page = previousPage
@@ -158,6 +164,17 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     fun closeChat() {
         vm.leaveChannel()
         page = previousPage
+    }
+
+    LaunchedEffect(notificationTarget) {
+        val requestedId = notificationTarget
+        if (requestedId != null && requestedId > 0) {
+            openChannel(requestedId)
+            NotificationOpenRequests.consume(requestedId)
+        }
+    }
+    LaunchedEffect(page, selectedId) {
+        VisibleChat.channelId = if (page == "chat") selectedId ?: 0L else 0L
     }
 
     BackHandler(enabled = page == "chat") { closeChat() }
@@ -518,6 +535,8 @@ private fun ChannelListScreen(
     onDelete: (Long) -> Unit
 ) {
     var pendingDelete by remember { mutableStateOf<ChannelEntity?>(null) }
+    val context = LocalContext.current
+    val notificationPrefs = remember(context) { NotificationPreferences(context) }
 
     val filtered = channels.filter { channel ->
         channel.name.contains(query, ignoreCase = true) &&
@@ -589,6 +608,31 @@ private fun ChannelListScreen(
                                     Icon(Icons.Default.MoreVert, contentDescription = "チャンネルの操作")
                                 }
                                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                    var channelAlertsEnabled by remember(channel.id) {
+                                        mutableStateOf(notificationPrefs.channelEnabled(channel.id))
+                                    }
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(if (channelAlertsEnabled) "通知をオフ" else "通知をオン")
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.NotificationsNone, contentDescription = null)
+                                        },
+                                        onClick = {
+                                            channelAlertsEnabled = !channelAlertsEnabled
+                                            notificationPrefs.setChannelEnabled(channel.id, channelAlertsEnabled)
+                                            showMenu = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("通知音・振動を設定") },
+                                        onClick = {
+                                            showMenu = false
+                                            MessageNotifications.openChannelSettings(
+                                                context, channel.id, channel.name
+                                            )
+                                        }
+                                    )
                                     DropdownMenuItem(
                                         text = { Text("削除") },
                                         leadingIcon = { Icon(Icons.Default.DeleteOutline, contentDescription = null) },
