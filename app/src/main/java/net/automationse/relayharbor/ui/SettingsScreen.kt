@@ -16,6 +16,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -25,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -45,7 +47,13 @@ fun SettingsScreen(
     onSync: () -> Unit,
     updateState: AppUpdateState,
     onCheckUpdate: () -> Unit,
-    onOpenUpdatePage: () -> Unit
+    onOpenUpdatePage: () -> Unit,
+    resumeLastPage: Boolean,
+    onResumeLastPageChange: (Boolean) -> Unit,
+    showHomeActivity: Boolean,
+    onShowHomeActivityChange: (Boolean) -> Unit,
+    showHomeChannels: Boolean,
+    onShowHomeChannelsChange: (Boolean) -> Unit
 ) {
     var mode by remember(settings.mode) { mutableStateOf(settings.mode) }
     var endpoint by remember(settings.endpoint) { mutableStateOf(settings.endpoint) }
@@ -113,6 +121,57 @@ fun SettingsScreen(
                         selected = ai == value,
                         onClick = { ai = value },
                         label = { Text(label) }
+                    )
+                }
+            }
+            HorizontalDivider()
+            Text(
+                "表示設定",
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("前回開いた画面から再開")
+                            Text("次回起動時に最後のタブやチャットを復元します。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = resumeLastPage, onCheckedChange = onResumeLastPageChange)
+                    }
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("ホームに最近の通知を表示", modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = showHomeActivity,
+                            onCheckedChange = onShowHomeActivityChange
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("ホームにチャンネル一覧を表示", modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = showHomeChannels,
+                            onCheckedChange = onShowHomeChannelsChange
+                        )
+                    }
+                    Text(
+                        "アプリの配置・検索条件・表示切替も端末内に保存されます。アカウントや認証情報には影響しません。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
