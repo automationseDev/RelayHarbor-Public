@@ -1,6 +1,7 @@
 package net.automationse.relayharbor.data
 
 import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -45,9 +46,9 @@ data class MessageEntity(
     val timestamp: Long = System.currentTimeMillis(),
     val fromMe: Boolean = false,
     val isRead: Boolean = true,
-    val isPinned: Boolean = false,
-    val savedForLater: Boolean = false,
-    val isDone: Boolean = false
+    @ColumnInfo(defaultValue = "0") val isPinned: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val savedForLater: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val isDone: Boolean = false
 )
 
 data class ChannelSummary(
