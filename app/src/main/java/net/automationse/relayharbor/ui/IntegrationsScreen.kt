@@ -86,7 +86,10 @@ fun IntegrationsScreen(
     var createOpen by rememberSaveable { mutableStateOf(false) }
     // Credentials are never stored in the editor draft.
     LaunchedEffect(credential?.connection?.id) {
-        if (credential != null) IntegrationDraftStore.clear(context)
+        if (credential != null) {
+            IntegrationDraftStore.clear(context)
+            createOpen = false
+        }
     }
     var editing by remember { mutableStateOf<IntegrationConnection?>(null) }
     var deleting by remember { mutableStateOf<IntegrationConnection?>(null) }
@@ -135,7 +138,7 @@ fun IntegrationsScreen(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(onClick = { createOpen = true }, enabled = configured && !transferBusy) {
-                            Text("＋ 連携先を追加")
+                            Text("＋ ガイド付きで追加")
                         }
                         TextButton(onClick = onRefresh, enabled = configured && !transferBusy) {
                             Text("更新")
@@ -393,13 +396,12 @@ fun IntegrationsScreen(
     }
 
     if (createOpen) {
-        ConnectionEditorDialog(
-            initial = null,
+        IntegrationSetupWizard(
+            status = status,
             onDismiss = { createOpen = false },
             onDiscard = { IntegrationDraftStore.clear(context); createOpen = false },
-            onSave = { name, provider, channel, score, keyword, feedUrl, interval ->
+            onCreate = { name, provider, channel, score, keyword, feedUrl, interval ->
                 onAdd(name, provider, channel, score, keyword, feedUrl, interval)
-                createOpen = false
             }
         )
     }
@@ -447,6 +449,7 @@ fun IntegrationsScreen(
         var tokenCopied by remember(created.connection.id, created.token) {
             mutableStateOf(false)
         }
+        var testRequested by remember(created.connection.id) { mutableStateOf(false) }
         AlertDialog(
             // Do not silently discard a freshly created one-time token.
             onDismissRequest = {},
@@ -454,7 +457,7 @@ fun IntegrationsScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (created.connection.provider == "rss") {
-                        Text("登録が完了しました。「今すぐ取得」で最新記事を確認できます。")
+                        Text("登録が完了しました。以下のボタンから記事取得をテストできます。")
                         Text(created.connection.feedUrl, style = MaterialTheme.typography.bodySmall)
                         Text("間隔: ${created.connection.pollIntervalMinutes}分",
                             style = MaterialTheme.typography.bodySmall)
@@ -473,6 +476,29 @@ fun IntegrationsScreen(
                             clipboard.setText(AnnotatedString(created.token))
                             tokenCopied = true
                         }) { Text(if (tokenCopied) "コピー済み" else "専用トークンをコピー") }
+                        Text(
+                            "URLとトークンを送信元のHTTP POST設定に登録してください。トークンは再表示できません。",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    TextButton(
+                        enabled = created.token.isBlank() || tokenCopied,
+                        onClick = {
+                            testRequested = true
+                            if (created.connection.provider == "rss")
+                                onRefreshFeed(created.connection.id)
+                            else onTest(created.connection.id)
+                        }
+                    ) {
+                        Text(if (created.connection.provider == "rss") "今すぐ記事を取得" else "テスト通知を送信")
+                    }
+                    if (testRequested) {
+                        Text(
+                            "テストを依頼しました。結果は連携先の状態やチャット画面で確認してください。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        Text(status, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             },
@@ -620,7 +646,7 @@ private fun ConnectionEditorDialog(
 }
 
 /** Stores only non-secret connection editor fields; never credentials or access tokens. */
-private object IntegrationDraftStore {
+internal object IntegrationDraftStore {
     private const val PREFS = "integration_editor_draft"
     private const val KEY = "create_draft_json"
 
@@ -631,7 +657,8 @@ private object IntegrationDraftStore {
     }.getOrNull()
 
     fun save(context: Context, provider: String, name: String, channel: String,
-             minScore: Int, keyword: String, feedUrl: String, interval: Int) {
+             minScore: Int, keyword: String, feedUrl: String, interval: Int,
+             templateKey: String = "webhook", wizardStep: Int = 0) {
         val json = JSONObject()
             .put("provider", provider)
             .put("name", name)
@@ -640,6 +667,8 @@ private object IntegrationDraftStore {
             .put("keyword", keyword)
             .put("feedUrl", feedUrl)
             .put("interval", interval)
+            .put("templateKey", templateKey)
+            .put("wizardStep", wizardStep)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY, json.toString()).apply()
     }
