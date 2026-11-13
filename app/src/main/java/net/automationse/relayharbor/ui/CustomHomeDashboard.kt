@@ -210,9 +210,9 @@ internal fun CustomHomeDashboard(
                     }
                     if (editMode) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.Center
                         ) {
                             Text("幅", style = MaterialTheme.typography.labelSmall)
                             IconButton(
@@ -231,6 +231,12 @@ internal fun CustomHomeDashboard(
                                 enabled = panel.span < columns,
                                 modifier = Modifier.size(32.dp)
                             ) { Icon(Icons.Default.Add, contentDescription = "幅を拡大") }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
                             Text("高さ", style = MaterialTheme.typography.labelSmall)
                             IconButton(
                                 onClick = {
@@ -239,6 +245,8 @@ internal fun CustomHomeDashboard(
                                 enabled = panel.height > 1,
                                 modifier = Modifier.size(32.dp)
                             ) { Icon(Icons.Default.Remove, contentDescription = "高さを縮小") }
+                            Text(panel.height.toString() + "/6",
+                                style = MaterialTheme.typography.labelSmall)
                             IconButton(
                                 onClick = {
                                     updateLayout(HomePanelLayout.resize(profile, layout, panel.id, 0, 1))
