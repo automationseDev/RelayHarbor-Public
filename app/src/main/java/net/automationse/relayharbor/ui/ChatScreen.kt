@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import net.automationse.relayharbor.data.ChatDraftStore
 import net.automationse.relayharbor.data.CardCodec
 import net.automationse.relayharbor.data.MessageEntity
+import net.automationse.relayharbor.data.NotificationAction
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +62,7 @@ fun ChatScreen(
     onBack: () -> Unit,
     onSend: (String) -> Unit,
     onDemo: () -> Unit,
+    onNotificationAction: (Long, NotificationAction) -> Unit,
     sending: Boolean = false,
     error: String? = null
 ) {
@@ -180,7 +182,7 @@ fun ChatScreen(
                         previous.fromMe == message.fromMe &&
                         previousDate == currentDate &&
                         (message.timestamp - previous.timestamp) in 0L..180000L
-                    MessageTimelineItem(message, grouped)
+                    MessageTimelineItem(message, grouped, onNotificationAction)
                 }
             }
         }
@@ -206,7 +208,11 @@ private fun DateSeparator(label: String) {
 }
 
 @Composable
-private fun MessageTimelineItem(message: MessageEntity, grouped: Boolean) {
+private fun MessageTimelineItem(
+    message: MessageEntity,
+    grouped: Boolean,
+    onNotificationAction: (Long, NotificationAction) -> Unit
+) {
     if (message.fromMe) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -271,6 +277,7 @@ private fun MessageTimelineItem(message: MessageEntity, grouped: Boolean) {
                     } else {
                         RichCardView(card)
                     }
+                    NotificationActionBar(message, onNotificationAction)
                 }
             }
         }
