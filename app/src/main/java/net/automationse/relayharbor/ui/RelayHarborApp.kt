@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -445,135 +447,143 @@ private fun HomeScreen(
     onForegroundSyncSecondsChange: (Int) -> Unit,
     onSync: () -> Unit
 ) {
+    val context = LocalContext.current
+    val store = remember(context) { HomePanelStore(context) }
+    // The available window width separates compact (cover) and expanded views.
+    // It changes automatically when the Fold opens, closes, or multi-window changes size.
+    val profile = if (LocalConfiguration.current.screenWidthDp >= 600)
+        HomePanelLayout.EXPANDED else HomePanelLayout.COVER
+    var panels by remember(profile) { mutableStateOf(store.load(profile)) }
     var appDrawerOpen by rememberSaveable { mutableStateOf(false) }
     val unreadCount = summaries.values.sumOf { it.unreadCount }
     val recentChannels = channels.sortedWith(
-        compareByDescending<ChannelEntity> { summaries[it.id]?.lastTimestamp ?: 0L }.thenBy { it.position }
+        compareByDescending<ChannelEntity> { summaries[it.id]?.lastTimestamp ?: 0L }
+            .thenBy { it.position }
     ).take(5)
+
     Scaffold(topBar = { WorkspaceBar("RelayHarbor", "あなたのワークスペース") }) { inner ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shape = RoundedCornerShape(20.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        "マイワークスペース",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                        Text("未読 $unreadCount 件", style = MaterialTheme.typography.bodyMedium)
-                        Text("チャンネル ${channels.size} 件", style = MaterialTheme.typography.bodyMedium)
+        Box(Modifier.fillMaxSize().padding(inner)) {
+            CustomHomeDashboard(
+                profile = profile,
+                layout = panels,
+                onLayoutChange = { changed ->
+                    panels = HomePanelLayout.normalize(profile, changed)
+                    store.save(profile, panels)
+                },
+                onReset = { panels = store.reset(profile) }
+            ) { id ->
+                when (id) {
+                    "overview" -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "マイワークスペース",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text("未読 $unreadCount 件")
+                            Text("チャンネル ${channels.size} 件")
+                            Text(
+                                "アプリ・チャット・通知をここからすばやく開けます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                    Text(
-                        "アプリ・チャット・通知をここからすばやく開けます。",
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                    "apps" -> QuickAppsSection()
+                    "drawer" -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                "すべてのアプリ",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Button(
+                                onClick = { appDrawerOpen = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Apps, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("アプリ一覧を開く")
+                            }
+                        }
+                    }
+                    "sync" -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "同期・通知",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                if (syncAvailable) syncStatus else "Relay未接続（設定から接続）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            TextButton(onClick = onSync, enabled = syncAvailable) {
+                                Text("今すぐ同期")
+                            }
+                            Text(
+                                "表示中の同期間隔",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                listOf(30 to "30秒", 60 to "1分", 120 to "2分", 300 to "5分")
+                                    .forEach { (seconds, label) ->
+                                        FilterChip(
+                                            selected = foregroundSyncSeconds == seconds,
+                                            onClick = { onForegroundSyncSecondsChange(seconds) },
+                                            label = { Text(label) }
+                                        )
+                                    }
+                            }
+                        }
+                    }
+                    "activity" -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            SectionHeading("最近のアクティビティ", "すべて見る", onAllActivity)
+                            if (!showActivity) {
+                                Text("表示設定で最近の通知がオフになっています。")
+                                TextButton(onClick = { onShowActivityChange(true) }) {
+                                    Text("通知パネルを表示")
+                                }
+                            } else if (activity.isEmpty()) {
+                                EmptyHint("Botからの通知は、ここにまとまります。")
+                            } else {
+                                activity.take(3).forEach { message ->
+                                    val channel = channels.firstOrNull { it.id == message.channelId }
+                                    ActivityItem(message, channel) { onOpen(message.channelId) }
+                                }
+                            }
+                        }
+                    }
+                    "channels" -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            SectionHeading("チャンネル", "一覧へ", onAllChannels)
+                            if (!showChannels) {
+                                Text("表示設定でチャンネルがオフになっています。")
+                                TextButton(onClick = { onShowChannelsChange(true) }) {
+                                    Text("チャンネルを表示")
+                                }
+                            } else if (recentChannels.isEmpty()) {
+                                EmptyHint("チャンネルを作成して、通知や会話を整理しましょう。")
+                            } else {
+                                recentChannels.forEach { channel ->
+                                    ChannelItem(
+                                        channel, summaries[channel.id],
+                                        onClick = { onOpen(channel.id) }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
-
-            Button(
-                onClick = { appDrawerOpen = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Apps, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("すべてのアプリを開く")
-            }
-            QuickAppsSection()
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                FilterChip(
-                    selected = showActivity,
-                    onClick = { onShowActivityChange(!showActivity) },
-                    label = { Text("最近の通知") }
-                )
-                FilterChip(
-                    selected = showChannels,
-                    onClick = { onShowChannelsChange(!showChannels) },
-                    label = { Text("チャンネル") }
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    if (syncAvailable) syncStatus else "Relay未接続（設定から接続）",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                TextButton(onClick = onSync, enabled = syncAvailable) { Text("今すぐ同期") }
-            }
-            Text(
-                "表示中の同期間隔",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                listOf(30 to "30秒", 60 to "1分", 120 to "2分", 300 to "5分")
-                    .forEach { (seconds, label) ->
-                        FilterChip(
-                            selected = foregroundSyncSeconds == seconds,
-                            onClick = { onForegroundSyncSecondsChange(seconds) },
-                            label = { Text(label) }
-                        )
-                    }
-            }
-
-            if (showActivity) {
-            SectionHeading("最近のアクティビティ", "すべて見る", onAllActivity)
-            if (activity.isEmpty()) {
-                EmptyHint("Botからの通知は、ここにまとまります。")
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    activity.take(3).forEach { message ->
-                        val channel = channels.firstOrNull { it.id == message.channelId }
-                        ActivityItem(message, channel, { onOpen(message.channelId) })
-                    }
-                }
-            }
-
-            }
-            if (showChannels) {
-            SectionHeading("チャンネル", "一覧へ", onAllChannels)
-            if (recentChannels.isEmpty()) {
-                EmptyHint("チャンネルを作成して、通知や会話を整理しましょう。")
-            } else {
-                Card(
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    recentChannels.forEachIndexed { index, channel ->
-                        ChannelItem(channel, summaries[channel.id], onClick = { onOpen(channel.id) })
-                        if (index != recentChannels.lastIndex) HorizontalDivider(
-                            modifier = Modifier.padding(start = 76.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant
-                        )
-                    }
-                }
-            }
-            }
-            Spacer(Modifier.height(10.dp))
         }
     }
-    if (appDrawerOpen) {
-        HomeAllAppsDrawer(onDismiss = { appDrawerOpen = false })
-    }
+    if (appDrawerOpen) HomeAllAppsDrawer(onDismiss = { appDrawerOpen = false })
 }
 
 @Composable

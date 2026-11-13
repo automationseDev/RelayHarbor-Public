@@ -1,6 +1,20 @@
 package net.automationse.relayharbor.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.RssFeed
+import androidx.compose.material.icons.filled.SettingsEthernet
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +29,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,11 +81,6 @@ internal val integrationWizardPresets = listOf(
         "n8n", "n8n ワークフロー", "HTTP Requestノードから結果を送る",
         "webhook", "n8n通知", "自動化",
         "n8nのHTTP RequestノードでPOST / JSON / Authorization: Bearerを設定します。これはWebhook送信の設定ガイドで、n8nアカウントとのOAuth接続ではありません。"
-    ),
-    IntegrationWizardPreset(
-        "scout", "Lancers AI Scout", "案件評価の結果をカードとして受け取る",
-        "webhook", "Lancers AI Scout", "AI案件スカウト",
-        "ScoutのRELAYHARBOR_INBOUND_URL / RELAYHARBOR_INBOUND_TOKENに発行値を設定し、ALERT_MODE=slack,relayで並行通知できます。既存Slackの通知先は無効化しないでください。"
     )
 )
 
@@ -189,31 +197,74 @@ internal fun IntegrationSetupWizard(
                             style = MaterialTheme.typography.bodySmall
                         )
                         integrationWizardPresets.forEach { option ->
+                            val selected = templateKey == option.key
+                            val selectPreset = {
+                                templateKey = option.key
+                                name = option.suggestedName
+                                channel = option.suggestedChannel
+                                if (option.provider == "rss") minScore = 0
+                            }
                             Card(
-                                Modifier.fillMaxWidth().clickable {
-                                    templateKey = option.key
-                                    name = option.suggestedName
-                                    channel = option.suggestedChannel
-                                    if (option.provider == "rss") minScore = 0
-                                }
+                                modifier = Modifier.fillMaxWidth().clickable(onClick = selectPreset),
+                                shape = RoundedCornerShape(18.dp),
+                                border = BorderStroke(
+                                    if (selected) 2.dp else 1.dp,
+                                    if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outlineVariant
+                                ),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (selected)
+                                        MaterialTheme.colorScheme.secondaryContainer
+                                    else MaterialTheme.colorScheme.surfaceContainerLow
+                                )
                             ) {
                                 Row(
-                                    Modifier.fillMaxWidth().padding(9.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    Modifier.fillMaxWidth().padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    RadioButton(
-                                        selected = templateKey == option.key,
-                                        onClick = {
-                                            templateKey = option.key
-                                            name = option.suggestedName
-                                            channel = option.suggestedChannel
-                                            if (option.provider == "rss") minScore = 0
+                                    Surface(
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer
+                                    ) {
+                                        Box(
+                                            Modifier.size(52.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = when (option.key) {
+                                                    "rss" -> Icons.Default.RssFeed
+                                                    "github" -> Icons.Default.Code
+                                                    "dify" -> Icons.Default.AutoAwesome
+                                                    "n8n" -> Icons.Default.Hub
+                                                    else -> Icons.Default.SettingsEthernet
+                                                },
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
                                         }
-                                    )
-                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        Text(option.title, fontWeight = FontWeight.SemiBold)
-                                        Text(option.description, style = MaterialTheme.typography.bodySmall)
                                     }
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        Text(option.title, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            option.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        if (option.provider != "rss") Text(
+                                            "Webhook形式",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    if (selected) Text(
+                                        "選択中",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
                                 }
                             }
                         }
@@ -232,7 +283,7 @@ internal fun IntegrationSetupWizard(
                             value = channel,
                             onValueChange = { channel = it.take(60) },
                             label = { Text("通知先チャンネル（必須）") },
-                            supportingText = { Text("例：AI案件スカウト、GitHub、RSS") },
+                            supportingText = { Text("例：お知らせ、GitHub、RSS") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )

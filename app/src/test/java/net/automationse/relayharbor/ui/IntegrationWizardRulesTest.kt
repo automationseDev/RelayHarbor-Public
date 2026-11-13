@@ -8,7 +8,7 @@ import org.junit.Test
 class IntegrationWizardRulesTest {
     @Test fun allPresetsMapToSupportedBackendTypes() {
         assertEquals(
-            listOf("webhook", "rss", "github", "dify", "n8n", "scout"),
+            listOf("webhook", "rss", "github", "dify", "n8n"),
             integrationWizardPresets.map { it.key }
         )
         assertTrue(
