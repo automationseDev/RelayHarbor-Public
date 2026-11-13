@@ -38,6 +38,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -128,6 +129,9 @@ internal fun CustomHomeDashboard(
             }
         }
         items(layout.filter { it.visible }, key = { it.id }, span = { GridItemSpan(it.span) }) { panel ->
+            DisposableEffect(profile, panel.id) {
+                onDispose { positions.remove(panel.id) }
+            }
             var drag by remember(panel.id) { mutableStateOf(Offset.Zero) }
             var dragging by remember(panel.id) { mutableStateOf(false) }
             var resizeDrag by remember(panel.id) { mutableStateOf(Offset.Zero) }
@@ -171,7 +175,11 @@ internal fun CustomHomeDashboard(
                                         val source = positions[panel.id] ?: return@detectDragGesturesAfterLongPress
                                         val center = source.center + drag
                                         val hovered = positions.entries.firstOrNull {
-                                            it.key != panel.id && it.value.contains(center)
+                                            it.key != panel.id &&
+                                                layout.any { visiblePanel ->
+                                                    visiblePanel.id == it.key && visiblePanel.visible
+                                                } &&
+                                                it.value.contains(center)
                                         }?.key
                                         if (hovered != null) {
                                             updateLayout(HomePanelLayout.move(profile, layout, panel.id, hovered))
