@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import net.automationse.relayharbor.data.ChannelEntity
 import net.automationse.relayharbor.data.ChannelSummary
 import net.automationse.relayharbor.data.MessageEntity
+import net.automationse.relayharbor.data.NotificationAction
 import net.automationse.relayharbor.data.ConnectionSettings
 import net.automationse.relayharbor.data.ConnectionStore
 import net.automationse.relayharbor.data.RelaySecretStore
@@ -92,6 +93,10 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
 
     fun leaveChannel() {
         currentChannel.value = null
+    }
+
+    fun updateNotification(messageId: Long, action: NotificationAction) {
+        viewModelScope.launch { repository.updateNotification(messageId, action) }
     }
 
     fun createChannel(name: String) {

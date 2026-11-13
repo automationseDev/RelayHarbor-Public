@@ -76,6 +76,9 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import net.automationse.relayharbor.data.ChannelEntity
 import net.automationse.relayharbor.data.ChannelSummary
 import net.automationse.relayharbor.data.MessageEntity
+import net.automationse.relayharbor.data.NotificationAction
+import net.automationse.relayharbor.data.NotificationCenterRules
+import net.automationse.relayharbor.data.CardCodec
 import net.automationse.relayharbor.notification.NotificationOpenRequests
 import net.automationse.relayharbor.notification.NotificationPreferences
 import net.automationse.relayharbor.notification.MessageNotifications
@@ -266,6 +269,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     onOpen = ::openChannel,
                     onAllChannels = { page = "channels" },
                     onAllActivity = { page = "activity" },
+                    onNotificationAction = vm::updateNotification,
                     showActivity = showHomeActivity,
                     showChannels = showHomeChannels,
                     onShowActivityChange = {
@@ -306,7 +310,8 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                 "activity" -> ActivityScreen(
                     activity = activity,
                     channels = channels.associateBy { it.id },
-                    onOpen = ::openChannel
+                    onOpen = ::openChannel,
+                    onNotificationAction = vm::updateNotification
                 )
                 "chat" -> {
                     val chatId = selectedId
@@ -319,6 +324,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         onBack = ::closeChat,
                         onSend = vm::sendMessage,
                         onDemo = vm::addDemoCard,
+                        onNotificationAction = vm::updateNotification,
                         sending = busyChannelId == selectedId,
                         error = aiError
                     )
@@ -437,6 +443,7 @@ private fun HomeScreen(
     onOpen: (Long) -> Unit,
     onAllChannels: () -> Unit,
     onAllActivity: () -> Unit,
+    onNotificationAction: (Long, NotificationAction) -> Unit,
     showActivity: Boolean,
     showChannels: Boolean,
     onShowActivityChange: (Boolean) -> Unit,
@@ -552,9 +559,16 @@ private fun HomeScreen(
                             } else if (activity.isEmpty()) {
                                 EmptyHint("Botからの通知は、ここにまとまります。")
                             } else {
-                                activity.take(3).forEach { message ->
+                                activity.filter { !it.isDone }.sortedWith(
+                                    compareByDescending<MessageEntity> { it.isPinned }
+                                        .thenByDescending { it.timestamp }
+                                ).take(3).forEach { message ->
                                     val channel = channels.firstOrNull { it.id == message.channelId }
-                                    ActivityItem(message, channel) { onOpen(message.channelId) }
+                                    ActivityItem(
+                                        message, channel, { onOpen(message.channelId) },
+                                        onNotificationAction,
+                                        compact = true
+                                    )
                                 }
                             }
                         }
@@ -806,25 +820,38 @@ private fun ChannelItem(
 private fun ActivityScreen(
     activity: List<MessageEntity>,
     channels: Map<Long, ChannelEntity>,
-    onOpen: (Long) -> Unit
+    onOpen: (Long) -> Unit,
+    onNotificationAction: (Long, NotificationAction) -> Unit
 ) {
     val context = LocalContext.current
     val uiStore = remember(context) { WorkspaceUiStore(context) }
     var query by rememberSaveable { mutableStateOf(uiStore.activitySearch()) }
-    var filter by rememberSaveable { mutableStateOf(uiStore.activityListFilter()) }
-    val visible = activity.filter { message ->
-        val matches = query.isBlank() ||
-            message.text.contains(query, ignoreCase = true) ||
-            message.sender.contains(query, ignoreCase = true) ||
-            (channels[message.channelId]?.name?.contains(query, ignoreCase = true) == true)
-        matches && when (filter) {
-            "unread" -> !message.isRead
-            "read" -> message.isRead
-            else -> true
-        }
+    var filter by rememberSaveable {
+        mutableStateOf(NotificationCenterRules.filterId(uiStore.activityListFilter()))
     }
+    val visible = NotificationCenterRules.sort(
+        activity.filter { message ->
+            NotificationCenterRules.matches(
+                message, filter, query, channels[message.channelId]?.name.orEmpty()
+            )
+        }, filter
+    )
+    val counts = mapOf(
+        "important" to activity.count {
+            NotificationCenterRules.matches(it, "important")
+        },
+        "unread" to activity.count {
+            NotificationCenterRules.matches(it, "unread")
+        },
+        "later" to activity.count {
+            NotificationCenterRules.matches(it, "later")
+        },
+        "done" to activity.count {
+            NotificationCenterRules.matches(it, "done")
+        }
+    )
 
-    Scaffold(topBar = { WorkspaceBar("アクティビティ", "Bot・AIから届いたメッセージ") }) { inner ->
+    Scaffold(topBar = { WorkspaceBar("通知センター", "重要な通知を見逃さず、あとで整理") }) { inner ->
         Column(Modifier.fillMaxSize().padding(inner)) {
             OutlinedTextField(
                 value = query,
@@ -832,7 +859,7 @@ private fun ActivityScreen(
                     query = it
                     uiStore.saveActivitySearch(it)
                 },
-                placeholder = { Text("通知や送信元を検索") },
+                placeholder = { Text("通知・カード・送信元を検索") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
@@ -849,10 +876,18 @@ private fun ActivityScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
             )
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                listOf("all" to "すべて", "unread" to "未読", "read" to "既読").forEach { (value, label) ->
+                listOf(
+                    "all" to "すべて",
+                    "important" to "重要 ${counts["important"]}",
+                    "unread" to "未読 ${counts["unread"]}",
+                    "later" to "あとで ${counts["later"]}",
+                    "done" to "対応済み ${counts["done"]}",
+                    "read" to "既読"
+                ).forEach { (value, label) ->
                     FilterChip(
                         selected = filter == value,
                         onClick = {
@@ -864,8 +899,8 @@ private fun ActivityScreen(
                 }
             }
             Text(
-                "通知  ${visible.size}件",
-                style = MaterialTheme.typography.labelMedium,
+                "表示 ${visible.size} 件  ·  重要は固定または評価85点以上",
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
             )
@@ -873,18 +908,23 @@ private fun ActivityScreen(
                 Box(Modifier.fillMaxWidth().padding(16.dp)) {
                     EmptyHint(
                         if (activity.isEmpty()) "届いた通知は、ここに時系列で表示されます。"
-                        else "条件に合う通知はありません。検索やフィルターを変更してください。"
+                        else "該当する通知はありません。検索・フィルターを変更してください。"
                     )
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        start = 12.dp, end = 12.dp, top = 4.dp, bottom = 20.dp
+                    ),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(visible, key = { it.id }) { message ->
-                        ActivityItem(message, channels[message.channelId],
-                            onClick = { onOpen(message.channelId) })
+                        ActivityItem(
+                            message, channels[message.channelId],
+                            onClick = { onOpen(message.channelId) },
+                            onNotificationAction = onNotificationAction
+                        )
                     }
                 }
             }
@@ -893,33 +933,83 @@ private fun ActivityScreen(
 }
 
 @Composable
-private fun ActivityItem(message: MessageEntity, channel: ChannelEntity?, onClick: () -> Unit) {
+private fun ActivityItem(
+    message: MessageEntity,
+    channel: ChannelEntity?,
+    onClick: () -> Unit,
+    onNotificationAction: (Long, NotificationAction) -> Unit,
+    compact: Boolean = false
+) {
+    val card = remember(message.cardJson) {
+        message.cardJson?.let(CardCodec::decode)
+    }
+    var expanded by rememberSaveable(message.id) { mutableStateOf(false) }
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (!message.isRead) MaterialTheme.colorScheme.secondaryContainer
             else MaterialTheme.colorScheme.surfaceContainerLow
         )
     ) {
-        Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Top) {
-            Text(channel?.emoji ?: "💬", style = MaterialTheme.typography.titleLarge)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("# " + (channel?.name ?: "チャンネル"),
-                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f), maxLines = 1)
-                    Text(DateFormat.format("MM/dd HH:mm", message.timestamp).toString(),
+        Column(
+            Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top) {
+                Text(channel?.emoji ?: "💬", style = MaterialTheme.typography.titleLarge)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("# " + (channel?.name ?: "チャンネル"),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f), maxLines = 1)
+                        Text(DateFormat.format("MM/dd HH:mm", message.timestamp).toString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(message.sender,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        color = MaterialTheme.colorScheme.secondary)
+                    if (card != null) {
+                        Text(card.title, style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold)
+                        if (card.score != null) Text(
+                            "評価スコア: ${card.score} / 100",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                    if (message.text.isNotBlank()) {
+                        Text(message.text, maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
-                Text(message.sender, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary)
-                Text(if (message.text.isBlank() && message.kind == "card") "評価カード" else message.text,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium)
             }
+            if (message.isPinned || NotificationCenterRules.important(message)) {
+                Text("📌 重要", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+            if (message.savedForLater) {
+                Text("あとで確認", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary)
+            }
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                TextButton(onClick = onClick) {
+                    Text(if (compact) "チャットへ" else "チャットを開く")
+                }
+                if (!compact && card != null) {
+                    TextButton(onClick = { expanded = !expanded }) {
+                        Text(if (expanded) "カードを閉じる" else "カードを展開")
+                    }
+                }
+            }
+            if (!compact && expanded && card != null) RichCardView(card)
+            if (!compact) NotificationActionBar(message, onNotificationAction)
         }
     }
 }

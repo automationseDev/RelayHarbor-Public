@@ -73,4 +73,43 @@ class CardCodecTest {
             PublicThumbnailUrl.validate("https://images.example.org/pic.jpg"))
     }
 
+    @Test fun safeActionButtonsRoundTripAndLimitToThree() {
+        val url = "https://example.org/work/123"
+        val card = RichCard(
+            title = "Action Card",
+            actions = listOf(
+                CardAction("open_url", "詳細を見る", url = url),
+                CardAction("copy_text", "番号コピー", text = "123"),
+                CardAction("copy_text", "担当をコピー", text = "Team A"),
+                CardAction("copy_text", "Ignored fourth", text = "extra")
+            )
+        )
+        val result = CardCodec.decode(CardCodec.encode(card))
+        assertEquals(3, result?.actions?.size)
+        assertEquals(url, result?.actions?.first()?.url)
+        assertEquals("123", result?.actions?.get(1)?.text)
+    }
+
+    @Test fun remoteCardsCannotCreateUnsafeOrAutomaticActions() {
+        val json = """
+            {
+              "title":"Security",
+              "actions":[
+                {"type":"post","label":"Execute","url":"https://example.org/do"},
+                {"type":"open_url","label":"LAN","url":"https://192.168.1.1/admin"},
+                {"type":"open_url","label":"JS","url":"javascript:alert(1)"},
+                {"type":"open_url","label":"Safe","url":"https://example.org/news"},
+                {"type":"copy_text","label":"Copy","text":"hello"}
+              ]
+            }
+        """.trimIndent()
+        val actions = CardCodec.decode(json)?.actions
+        assertEquals(2, actions?.size)
+        assertEquals(listOf("open_url", "copy_text"), actions?.map { it.kind })
+        assertNull(PublicCardActionUrl.validate("http://example.org/path"))
+        assertNull(PublicCardActionUrl.validate("https://localhost/foo"))
+        assertEquals("https://example.org/path",
+            PublicCardActionUrl.validate("https://example.org/path"))
+    }
+
 }

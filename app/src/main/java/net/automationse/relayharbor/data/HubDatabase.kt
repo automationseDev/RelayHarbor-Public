@@ -1,6 +1,7 @@
 package net.automationse.relayharbor.data
 
 import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -44,7 +45,10 @@ data class MessageEntity(
     val cardJson: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val fromMe: Boolean = false,
-    val isRead: Boolean = true
+    val isRead: Boolean = true,
+    @ColumnInfo(defaultValue = "0") val isPinned: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val savedForLater: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val isDone: Boolean = false
 )
 
 data class ChannelSummary(
@@ -84,7 +88,7 @@ interface HubDao {
     """)
     fun observeChannelSummaries(): Flow<List<ChannelSummary>>
 
-    @Query("SELECT * FROM messages WHERE fromMe = 0 ORDER BY timestamp DESC, id DESC LIMIT 60")
+    @Query("SELECT * FROM messages WHERE fromMe = 0 ORDER BY timestamp DESC, id DESC LIMIT 500")
     fun observeActivity(): Flow<List<MessageEntity>>
 
     @Query("SELECT COALESCE(MAX(sequence), 0) FROM inbound_events WHERE source = :source")
@@ -117,11 +121,23 @@ interface HubDao {
 
     @Query("UPDATE messages SET isRead = 1 WHERE channelId = :channelId")
     suspend fun markRead(channelId: Long)
+
+    @Query("UPDATE messages SET isRead = :read WHERE id = :messageId AND fromMe = 0")
+    suspend fun setMessageRead(messageId: Long, read: Boolean)
+
+    @Query("UPDATE messages SET isPinned = :pinned WHERE id = :messageId AND fromMe = 0")
+    suspend fun setMessagePinned(messageId: Long, pinned: Boolean)
+
+    @Query("UPDATE messages SET savedForLater = :saved WHERE id = :messageId AND fromMe = 0")
+    suspend fun setMessageSaved(messageId: Long, saved: Boolean)
+
+    @Query("UPDATE messages SET isDone = :done, isRead = CASE WHEN :done = 1 THEN 1 ELSE isRead END, savedForLater = CASE WHEN :done = 1 THEN 0 ELSE savedForLater END WHERE id = :messageId AND fromMe = 0")
+    suspend fun setMessageDone(messageId: Long, done: Boolean)
 }
 
 @Database(
     entities = [ChannelEntity::class, MessageEntity::class, InboundEventEntity::class],
-    version = 2, exportSchema = true
+    version = 3, exportSchema = true
 )
 abstract class HubDatabase : RoomDatabase() {
     abstract fun dao(): HubDao
@@ -141,12 +157,20 @@ abstract class HubDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE messages ADD COLUMN savedForLater INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE messages ADD COLUMN isDone INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): HubDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 HubDatabase::class.java,
                 "relayharbor.db"
-            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
         }
     }
 }

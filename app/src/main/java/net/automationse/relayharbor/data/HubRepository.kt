@@ -22,20 +22,20 @@ class HubRepository(private val dao: HubDao) {
 
     suspend fun bootstrap() {
         if (dao.channelCount() != 0) return
-        val ai = dao.insertChannel(ChannelEntity(name = "AI案件スカウト", emoji = "🤖", position = 10))
-        val nas = dao.insertChannel(ChannelEntity(name = "NAS監視", emoji = "🖥️", position = 20))
+        val ai = dao.insertChannel(ChannelEntity(name = "お知らせ", emoji = "🔔", position = 10))
+        val nas = dao.insertChannel(ChannelEntity(name = "システム監視", emoji = "🖥️", position = 20))
         val github = dao.insertChannel(ChannelEntity(name = "GitHub", emoji = "🧩", position = 30))
         val assistant = dao.insertChannel(ChannelEntity(name = "AIチャット", emoji = "✨", position = 40))
         val now = System.currentTimeMillis()
         dao.insertMessage(MessageEntity(
-            channelId = ai, sender = "Scout Bot",
-            text = "新しい案件を検出しました（デモデータ）。",
+            channelId = ai, sender = "Demo Bot",
+            text = "サンプル通知です（デモデータ）。",
             kind = "card", timestamp = now - 120000L,
             cardJson = CardCodec.encode(RichCard(
-                title = "Python業務自動化ツール開発",
-                description = "案件評価カードのサンプルです。外部サービスとは接続していません。",
+                title = "サービス通知のサンプル",
+                description = "リッチカードのサンプルです。外部サービスとは接続していません。",
                 score = 92, badge = "高適合",
-                metrics = listOf(CardMetric("技術適合", 95), CardMetric("収益性", 88), CardMetric("納期余裕", 80))
+                metrics = listOf(CardMetric("稼働率", 95), CardMetric("品質", 88), CardMetric("安定性", 80))
             ))
         ))
         dao.insertMessage(MessageEntity(
@@ -117,6 +117,20 @@ class HubRepository(private val dao: HubDao) {
 
     suspend fun deleteChannel(id: Long) = dao.deleteChannel(id)
     suspend fun markRead(id: Long) = dao.markRead(id)
+
+    suspend fun updateNotification(messageId: Long, action: NotificationAction) {
+        if (messageId <= 0) return
+        when (action) {
+            NotificationAction.PIN -> dao.setMessagePinned(messageId, true)
+            NotificationAction.UNPIN -> dao.setMessagePinned(messageId, false)
+            NotificationAction.SAVE_FOR_LATER -> dao.setMessageSaved(messageId, true)
+            NotificationAction.REMOVE_FROM_LATER -> dao.setMessageSaved(messageId, false)
+            NotificationAction.COMPLETE -> dao.setMessageDone(messageId, true)
+            NotificationAction.REOPEN -> dao.setMessageDone(messageId, false)
+            NotificationAction.MARK_READ -> dao.setMessageRead(messageId, true)
+            NotificationAction.MARK_UNREAD -> dao.setMessageRead(messageId, false)
+        }
+    }
 
     suspend fun sendMessage(channelId: Long, body: String) {
         val cleaned = body.trim()
