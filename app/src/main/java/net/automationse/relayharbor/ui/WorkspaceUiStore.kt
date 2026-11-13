@@ -14,7 +14,7 @@ internal class WorkspaceUiStore(context: Context) {
     companion object {
         private val tabs = setOf("home", "channels", "activity", "integrations", "settings", "chat")
         private val channelFilters = setOf("all", "recent", "unread")
-        private val activityFilters = setOf("all", "unread", "read")
+        private val activityFilters = setOf("all", "important", "unread", "later", "done", "read")
         private val integrationFilters = setOf("all", "rss", "webhook", "active")
 
         fun safePage(value: String?): String =
