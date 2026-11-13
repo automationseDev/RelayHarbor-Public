@@ -566,7 +566,8 @@ private fun HomeScreen(
                                     val channel = channels.firstOrNull { it.id == message.channelId }
                                     ActivityItem(
                                         message, channel, { onOpen(message.channelId) },
-                                        onNotificationAction
+                                        onNotificationAction,
+                                        compact = true
                                     )
                                 }
                             }
@@ -936,7 +937,8 @@ private fun ActivityItem(
     message: MessageEntity,
     channel: ChannelEntity?,
     onClick: () -> Unit,
-    onNotificationAction: (Long, NotificationAction) -> Unit
+    onNotificationAction: (Long, NotificationAction) -> Unit,
+    compact: Boolean = false
 ) {
     val card = remember(message.cardJson) {
         message.cardJson?.let(CardCodec::decode)
@@ -993,16 +995,21 @@ private fun ActivityItem(
                 Text("あとで確認", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onClick) { Text("チャットを開く") }
-                if (card != null) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                TextButton(onClick = onClick) {
+                    Text(if (compact) "チャットへ" else "チャットを開く")
+                }
+                if (!compact && card != null) {
                     TextButton(onClick = { expanded = !expanded }) {
                         Text(if (expanded) "カードを閉じる" else "カードを展開")
                     }
                 }
             }
-            if (expanded && card != null) RichCardView(card)
-            NotificationActionBar(message, onNotificationAction)
+            if (!compact && expanded && card != null) RichCardView(card)
+            if (!compact) NotificationActionBar(message, onNotificationAction)
         }
     }
 }
