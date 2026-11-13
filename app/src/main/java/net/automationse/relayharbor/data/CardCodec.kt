@@ -14,6 +14,19 @@ import kotlinx.serialization.json.put
 
 data class CardMetric(val label: String, val percent: Int)
 
+// Only these two explicit, user-initiated actions are accepted from remote JSON.
+// Webhook payloads cannot trigger an arbitrary HTTP POST or execute commands.
+data class CardAction(
+    val kind: String,
+    val label: String,
+    val url: String? = null,
+    val text: String? = null
+)
+
+object PublicCardActionUrl {
+    fun validate(value: String?): String? = PublicThumbnailUrl.validate(value)
+}
+
 data class RichCard(
     val title: String,
     val description: String = "",
@@ -21,7 +34,8 @@ data class RichCard(
     val badge: String = "",
     val metrics: List<CardMetric> = emptyList(),
     val url: String? = null,
-    val thumbnailUrl: String? = null
+    val thumbnailUrl: String? = null,
+    val actions: List<CardAction> = emptyList()
 )
 
 /** Strict, secret-free HTTPS image link validation; media URLs are never trusted as code. */
@@ -79,6 +93,27 @@ object CardCodec {
         card.thumbnailUrl?.let { url ->
             PublicThumbnailUrl.validate(url)?.let { put("thumbnail_url", it) }
         }
+        put("actions", buildJsonArray {
+            card.actions.take(3).forEach { action ->
+                val safe = when (action.kind) {
+                    "open_url" -> PublicCardActionUrl.validate(action.url)?.let {
+                        CardAction("open_url", action.label.trim().take(40), url = it)
+                    }
+                    "copy_text" -> action.text?.takeIf { it.isNotBlank() && it.length <= 512 }?.let {
+                        CardAction("copy_text", action.label.trim().take(40), text = it)
+                    }
+                    else -> null
+                }
+                if (safe != null && safe.label.isNotBlank()) {
+                    add(buildJsonObject {
+                        put("type", safe.kind)
+                        put("label", safe.label)
+                        if (safe.url != null) put("url", safe.url)
+                        if (safe.text != null) put("text", safe.text)
+                    })
+                }
+            }
+        })
         put("metrics", buildJsonArray {
             card.metrics.forEach { metric ->
                 add(buildJsonObject {
@@ -102,6 +137,25 @@ object CardCodec {
                 if (label.isBlank()) null else CardMetric(label, percent.coerceIn(0, 100))
             }.getOrNull()
         }.orEmpty()
+        val actions = (obj["actions"] as? JsonArray)?.take(8)?.mapNotNull { entry ->
+            runCatching {
+                val value = entry as? JsonObject ?: return@runCatching null
+                val kind = value["type"]?.jsonPrimitive?.contentOrNull
+                    ?: value["kind"]?.jsonPrimitive?.contentOrNull
+                val label = value["label"]?.jsonPrimitive?.contentOrNull
+                    ?.trim()?.take(40).orEmpty()
+                if (label.isBlank()) return@runCatching null
+                when (kind) {
+                    "open_url" -> PublicCardActionUrl.validate(
+                        value["url"]?.jsonPrimitive?.contentOrNull
+                    )?.let { CardAction("open_url", label, url = it) }
+                    "copy_text" -> value["text"]?.jsonPrimitive?.contentOrNull
+                        ?.takeIf { it.isNotBlank() && it.length <= 512 }
+                        ?.let { CardAction("copy_text", label, text = it) }
+                    else -> null
+                }
+            }.getOrNull()
+        }?.take(3).orEmpty()
         RichCard(
             title = title,
             description = obj["description"]?.jsonPrimitive?.content.orEmpty().take(2000),
@@ -117,7 +171,8 @@ object CardCodec {
                 }.getOrNull()
             },
             metrics = metrics,
-            thumbnailUrl = extractThumbnail(obj)
+            thumbnailUrl = extractThumbnail(obj),
+            actions = actions
         )
     }.getOrNull()
 }
