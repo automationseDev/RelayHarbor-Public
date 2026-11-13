@@ -131,7 +131,7 @@ interface HubDao {
     @Query("UPDATE messages SET savedForLater = :saved WHERE id = :messageId AND fromMe = 0")
     suspend fun setMessageSaved(messageId: Long, saved: Boolean)
 
-    @Query("UPDATE messages SET isDone = :done, savedForLater = CASE WHEN :done = 1 THEN 0 ELSE savedForLater END WHERE id = :messageId AND fromMe = 0")
+    @Query("UPDATE messages SET isDone = :done, isRead = CASE WHEN :done = 1 THEN 1 ELSE isRead END, savedForLater = CASE WHEN :done = 1 THEN 0 ELSE savedForLater END WHERE id = :messageId AND fromMe = 0")
     suspend fun setMessageDone(messageId: Long, done: Boolean)
 }
 
