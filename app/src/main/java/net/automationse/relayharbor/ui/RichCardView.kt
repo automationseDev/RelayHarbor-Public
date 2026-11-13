@@ -1,5 +1,7 @@
 package net.automationse.relayharbor.ui
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import android.content.Intent
 import android.net.Uri
@@ -105,7 +107,10 @@ fun RichCardView(card: RichCard) {
                 Text(card.description, style = MaterialTheme.typography.bodySmall)
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 card.url?.let { link ->
                     AssistChip(
                         onClick = {
@@ -118,6 +123,34 @@ fun RichCardView(card: RichCard) {
                             Icon(Icons.Default.OpenInNew, contentDescription = null)
                         }
                     )
+                }
+                card.actions.forEach { action ->
+                    when (action.kind) {
+                        "open_url" -> action.url?.let { safeLink ->
+                            AssistChip(
+                                onClick = {
+                                    runCatching {
+                                        context.startActivity(
+                                            Intent(Intent.ACTION_VIEW, Uri.parse(safeLink))
+                                        )
+                                    }
+                                },
+                                label = { Text(action.label) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.OpenInNew, contentDescription = null)
+                                }
+                            )
+                        }
+                        "copy_text" -> action.text?.let { value ->
+                            AssistChip(
+                                onClick = { clipboard.setText(AnnotatedString(value)) },
+                                label = { Text(action.label) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = null)
+                                }
+                            )
+                        }
+                    }
                 }
                 if (card.description.isNotBlank()) {
                     AssistChip(
