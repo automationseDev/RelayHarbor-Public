@@ -118,6 +118,20 @@ class HubRepository(private val dao: HubDao) {
     suspend fun deleteChannel(id: Long) = dao.deleteChannel(id)
     suspend fun markRead(id: Long) = dao.markRead(id)
 
+    suspend fun updateNotification(messageId: Long, action: NotificationAction) {
+        if (messageId <= 0) return
+        when (action) {
+            NotificationAction.PIN -> dao.setMessagePinned(messageId, true)
+            NotificationAction.UNPIN -> dao.setMessagePinned(messageId, false)
+            NotificationAction.SAVE_FOR_LATER -> dao.setMessageSaved(messageId, true)
+            NotificationAction.REMOVE_FROM_LATER -> dao.setMessageSaved(messageId, false)
+            NotificationAction.COMPLETE -> dao.setMessageDone(messageId, true)
+            NotificationAction.REOPEN -> dao.setMessageDone(messageId, false)
+            NotificationAction.MARK_READ -> dao.setMessageRead(messageId, true)
+            NotificationAction.MARK_UNREAD -> dao.setMessageRead(messageId, false)
+        }
+    }
+
     suspend fun sendMessage(channelId: Long, body: String) {
         val cleaned = body.trim()
         if (cleaned.isNotEmpty()) {
