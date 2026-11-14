@@ -651,7 +651,7 @@ private fun HomeScreen(
     ) { result ->
         val id = pendingWidgets.pending()?.first
         if (result.resultCode == Activity.RESULT_OK && id != null &&
-            result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id) == id) {
+            (result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id) ?: id) == id) {
             configurePending(id)
         } else {
             finishPending(false)
