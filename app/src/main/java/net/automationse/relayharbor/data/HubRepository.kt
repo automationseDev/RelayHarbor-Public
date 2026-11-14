@@ -114,7 +114,7 @@ class HubRepository(private val dao: HubDao) {
             .revision(title, body)
         val displayedText = listOf(title, body)
             .filter { it.isNotBlank() }
-            .joinToString("\\n")
+            .joinToString("\n")
             .take(net.automationse.relayharbor.notification.AndroidNotificationRules.MAX_TEXT_LENGTH)
         return dao.saveInboundMessage(
             InboundEventEntity(source, sequence),
