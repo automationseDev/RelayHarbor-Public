@@ -263,6 +263,7 @@ class FloatingMenuService : Service() {
         // deliver outside-touch callbacks for TYPE_APPLICATION_OVERLAY.
         item("✕  メニューを閉じる") { hidePanel() }
         item("📷  スクリーンショット") { openCaptureRequest() }
+        item("📜  ロングスクショ（スクロール）") { openCaptureRequest(scrolling = true) }
         item("⌂  ホーム") { openTab("home") }
         item("▣  チャット") { openTab("channels") }
         item("♢  通知センター") { openTab("activity") }
@@ -349,12 +350,13 @@ class FloatingMenuService : Service() {
         }
     }
 
-    private fun openCaptureRequest() {
+    private fun openCaptureRequest(scrolling: Boolean = false) {
         // Unmount our overlay *before* system consent to avoid black/replaced
         // compositing regions in the eventual screenshot.
         setCaptureHidden(true)
         val intent = Intent(this, ScreenCaptureRequestActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            .putExtra(ScreenCaptureRequestActivity.EXTRA_SCROLL_CAPTURE, scrolling)
         runCatching { startActivity(intent) }.onFailure {
             setCaptureHidden(false)
             Toast.makeText(this, "スクリーンショットの確認画面を開けません", Toast.LENGTH_LONG).show()
