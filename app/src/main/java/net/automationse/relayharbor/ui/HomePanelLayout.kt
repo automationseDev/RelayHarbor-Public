@@ -91,6 +91,29 @@ internal object HomePanelLayout {
         if (panel.id == id) panel.copy(visible = visible) else panel
     }
 
+    /**
+     * Best-fit row packing: a later narrow panel can occupy a gap left by a
+     * wider panel. Preserves each card once and never changes persisted settings.
+     */
+    fun packedVisible(profile: String, current: List<HomePanel>): List<HomePanel> {
+        val remaining = normalize(profile, current).filter { it.visible }.toMutableList()
+        val result = mutableListOf<HomePanel>()
+        val columns = columns(profile)
+        var free = columns
+        while (remaining.isNotEmpty()) {
+            val next = remaining.indexOfFirst { it.span <= free }
+            if (next < 0) {
+                free = columns
+                continue
+            }
+            val panel = remaining.removeAt(next)
+            result.add(panel)
+            free -= panel.span
+            if (free == 0) free = columns
+        }
+        return result
+    }
+
     /** Pack row-major, preserving order with no missing internal columns. */
     fun rows(profile: String, current: List<HomePanel>): List<List<HomePanel>> {
         val maxWidth = columns(profile)

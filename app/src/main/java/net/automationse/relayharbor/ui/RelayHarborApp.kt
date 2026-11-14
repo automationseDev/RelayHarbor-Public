@@ -88,6 +88,7 @@ import net.automationse.relayharbor.notification.VisibleChat
 fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     val context = LocalContext.current
     val uiStore = remember(context) { WorkspaceUiStore(context) }
+    val twoPane = ResponsiveLayoutPolicy.useTwoPanes(LocalConfiguration.current.screenWidthDp)
     val defaultHome by DefaultHomeRole.active.collectAsState()
     val homeRequested by HomeLauncherRequests.requested.collectAsState()
     var page by rememberSaveable {
@@ -193,7 +194,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
         if (page != "chat") previousPage = page
         uiStore.saveLastChatId(id)
         vm.selectChannel(id)
-        page = "chat"
+        page = if (twoPane) "channels" else "chat"
     }
 
     fun closeChat() {
@@ -208,8 +209,12 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
             NotificationOpenRequests.consume(requestedId)
         }
     }
-    LaunchedEffect(page, selectedId) {
-        VisibleChat.channelId = if (page == "chat") selectedId ?: 0L else 0L
+    LaunchedEffect(page, selectedId, twoPane) {
+        VisibleChat.channelId = if (page == "chat" || (twoPane && page == "channels"))
+            selectedId ?: 0L else 0L
+    }
+    LaunchedEffect(twoPane, page) {
+        if (twoPane && page == "chat" && selectedId != null) page = "channels"
     }
 
     BackHandler(enabled = page == "chat") { closeChat() }
@@ -290,28 +295,83 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     },
                     onSync = vm::syncNow
                 )
-                "channels" -> ChannelListScreen(
-                    channels = channels,
-                    summaries = summaryById,
-                    query = channelQuery,
-                    onQueryChange = {
-                        channelQuery = it
-                        uiStore.saveChannelSearch(it)
-                    },
-                    filter = channelFilter,
-                    onFilterChange = {
-                        channelFilter = it
-                        uiStore.saveChannelListFilter(it)
-                    },
-                    onSelect = ::openChannel,
-                    onAdd = { showCreate = true },
-                    onDelete = vm::deleteChannel
-                )
+                "channels" -> {
+                    if (twoPane) {
+                        Row(Modifier.fillMaxSize()) {
+                            Box(Modifier.weight(0.36f).fillMaxSize()) {
+                    ChannelListScreen(
+                        channels = channels,
+                        summaries = summaryById,
+                        query = channelQuery,
+                        onQueryChange = {
+                            channelQuery = it
+                            uiStore.saveChannelSearch(it)
+                        },
+                        filter = channelFilter,
+                        onFilterChange = {
+                            channelFilter = it
+                            uiStore.saveChannelListFilter(it)
+                        },
+                        onSelect = ::openChannel,
+                        onAdd = { showCreate = true },
+                        onDelete = vm::deleteChannel
+                    )
+                            }
+                            androidx.compose.material3.VerticalDivider()
+                            Box(Modifier.weight(0.64f).fillMaxSize()) {
+                                if (selectedId != null &&
+                                    channels.any { it.id == selectedId }) {
+                                    val channel = channels.first { it.id == selectedId }
+                                    ChatScreen(
+                                        channelId = channel.id,
+                                        name = channel.name,
+                                        messages = messages,
+                                        onBack = vm::leaveChannel,
+                                        onSend = vm::sendMessage,
+                                        onDemo = vm::addDemoCard,
+                                        onNotificationAction = vm::updateNotification,
+                                        sending = busyChannelId == selectedId,
+                                        error = aiError
+                                    )
+                                } else {
+                                    Box(
+                                        Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            "左のチャンネルを選択して会話を表示",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                    ChannelListScreen(
+                        channels = channels,
+                        summaries = summaryById,
+                        query = channelQuery,
+                        onQueryChange = {
+                            channelQuery = it
+                            uiStore.saveChannelSearch(it)
+                        },
+                        filter = channelFilter,
+                        onFilterChange = {
+                            channelFilter = it
+                            uiStore.saveChannelListFilter(it)
+                        },
+                        onSelect = ::openChannel,
+                        onAdd = { showCreate = true },
+                        onDelete = vm::deleteChannel
+                    )
+                    }
+                }
                 "activity" -> ActivityScreen(
                     activity = activity,
                     channels = channels.associateBy { it.id },
                     onOpen = ::openChannel,
-                    onNotificationAction = vm::updateNotification
+                    onNotificationAction = vm::updateNotification,
+                    twoPane = twoPane
                 )
                 "chat" -> {
                     val chatId = selectedId
@@ -815,201 +875,3 @@ private fun ChannelItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ActivityScreen(
-    activity: List<MessageEntity>,
-    channels: Map<Long, ChannelEntity>,
-    onOpen: (Long) -> Unit,
-    onNotificationAction: (Long, NotificationAction) -> Unit
-) {
-    val context = LocalContext.current
-    val uiStore = remember(context) { WorkspaceUiStore(context) }
-    var query by rememberSaveable { mutableStateOf(uiStore.activitySearch()) }
-    var filter by rememberSaveable {
-        mutableStateOf(NotificationCenterRules.filterId(uiStore.activityListFilter()))
-    }
-    val visible = NotificationCenterRules.sort(
-        activity.filter { message ->
-            NotificationCenterRules.matches(
-                message, filter, query, channels[message.channelId]?.name.orEmpty()
-            )
-        }, filter
-    )
-    val counts = mapOf(
-        "important" to activity.count {
-            NotificationCenterRules.matches(it, "important")
-        },
-        "unread" to activity.count {
-            NotificationCenterRules.matches(it, "unread")
-        },
-        "later" to activity.count {
-            NotificationCenterRules.matches(it, "later")
-        },
-        "done" to activity.count {
-            NotificationCenterRules.matches(it, "done")
-        }
-    )
-
-    Scaffold(topBar = { WorkspaceBar("通知センター", "重要な通知を見逃さず、あとで整理") }) { inner ->
-        Column(Modifier.fillMaxSize().padding(inner)) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = {
-                    query = it
-                    uiStore.saveActivitySearch(it)
-                },
-                placeholder = { Text("通知・カード・送信元を検索") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = {
-                            query = ""
-                            uiStore.saveActivitySearch("")
-                        }) {
-                            Icon(Icons.Default.Close, contentDescription = "検索をクリア")
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf(
-                    "all" to "すべて",
-                    "important" to "重要 ${counts["important"]}",
-                    "unread" to "未読 ${counts["unread"]}",
-                    "later" to "あとで ${counts["later"]}",
-                    "done" to "対応済み ${counts["done"]}",
-                    "read" to "既読"
-                ).forEach { (value, label) ->
-                    FilterChip(
-                        selected = filter == value,
-                        onClick = {
-                            filter = value
-                            uiStore.saveActivityListFilter(value)
-                        },
-                        label = { Text(label) }
-                    )
-                }
-            }
-            Text(
-                "表示 ${visible.size} 件  ·  重要は固定または評価85点以上",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
-            )
-            if (visible.isEmpty()) {
-                Box(Modifier.fillMaxWidth().padding(16.dp)) {
-                    EmptyHint(
-                        if (activity.isEmpty()) "届いた通知は、ここに時系列で表示されます。"
-                        else "該当する通知はありません。検索・フィルターを変更してください。"
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 12.dp, end = 12.dp, top = 4.dp, bottom = 20.dp
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(visible, key = { it.id }) { message ->
-                        ActivityItem(
-                            message, channels[message.channelId],
-                            onClick = { onOpen(message.channelId) },
-                            onNotificationAction = onNotificationAction
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ActivityItem(
-    message: MessageEntity,
-    channel: ChannelEntity?,
-    onClick: () -> Unit,
-    onNotificationAction: (Long, NotificationAction) -> Unit,
-    compact: Boolean = false
-) {
-    val card = remember(message.cardJson) {
-        message.cardJson?.let(CardCodec::decode)
-    }
-    var expanded by rememberSaveable(message.id) { mutableStateOf(false) }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (!message.isRead) MaterialTheme.colorScheme.secondaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerLow
-        )
-    ) {
-        Column(
-            Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.Top) {
-                Text(channel?.emoji ?: "💬", style = MaterialTheme.typography.titleLarge)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("# " + (channel?.name ?: "チャンネル"),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f), maxLines = 1)
-                        Text(DateFormat.format("MM/dd HH:mm", message.timestamp).toString(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Text(message.sender,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary)
-                    if (card != null) {
-                        Text(card.title, style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold)
-                        if (card.score != null) Text(
-                            "評価スコア: ${card.score} / 100",
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                    if (message.text.isNotBlank()) {
-                        Text(message.text, maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-            if (message.isPinned || NotificationCenterRules.important(message)) {
-                Text("📌 重要", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary)
-            }
-            if (message.savedForLater) {
-                Text("あとで確認", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary)
-            }
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                TextButton(onClick = onClick) {
-                    Text(if (compact) "チャットへ" else "チャットを開く")
-                }
-                if (!compact && card != null) {
-                    TextButton(onClick = { expanded = !expanded }) {
-                        Text(if (expanded) "カードを閉じる" else "カードを展開")
-                    }
-                }
-            }
-            if (!compact && expanded && card != null) RichCardView(card)
-            if (!compact) NotificationActionBar(message, onNotificationAction)
-        }
-    }
-}

@@ -1,5 +1,6 @@
 package net.automationse.relayharbor.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -73,6 +75,13 @@ internal fun CustomHomeDashboard(
     var resetConfirm by rememberSaveable { mutableStateOf(false) }
     val positions = remember(profile) { mutableMapOf<String, Rect>() }
     val density = LocalDensity.current
+    var activeDragId by remember(profile) { mutableStateOf<String?>(null) }
+    var hoverTarget by remember(profile) { mutableStateOf<String?>(null) }
+    val liveLayout by rememberUpdatedState(layout)
+    val packedLayout = remember(profile, layout) {
+        HomePanelLayout.packedVisible(profile, layout)
+    }
+    val livePackedLayout by rememberUpdatedState(packedLayout)
     // Controls apply only to the current cover/expanded layout, not both.
     val updateLayout by rememberUpdatedState(onLayoutChange)
 
@@ -112,7 +121,7 @@ internal fun CustomHomeDashboard(
             item(span = { GridItemSpan(columns) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        "カードの上部を長押しして移動。横幅・高さは − / ＋ または右下の角をドラッグして変更できます。",
+                        "上の取っ手を長押しして移動先までドラッグします。移動先が強調されたら指を離してください。幅・高さは − / ＋ でも変更できます。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -128,11 +137,12 @@ internal fun CustomHomeDashboard(
                 }
             }
         }
-        items(layout.filter { it.visible }, key = { it.id }, span = { GridItemSpan(it.span) }) { panel ->
+        items(packedLayout, key = { it.id }, span = { GridItemSpan(it.span) }) { panel ->
             DisposableEffect(profile, panel.id) {
                 onDispose { positions.remove(panel.id) }
             }
             var drag by remember(panel.id) { mutableStateOf(Offset.Zero) }
+            var dragOrigin by remember(panel.id) { mutableStateOf(Offset.Zero) }
             var dragging by remember(panel.id) { mutableStateOf(false) }
             var resizeDrag by remember(panel.id) { mutableStateOf(Offset.Zero) }
             val unitWidthPx = with(density) {
@@ -143,7 +153,7 @@ internal fun CustomHomeDashboard(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height((130 + panel.height * 92).dp)
+                    .animateContentSize()
                     .onGloballyPositioned { positions[panel.id] = it.boundsInRoot() }
                     .zIndex(if (dragging) 2f else 0f)
                     .graphicsLayer {
@@ -152,13 +162,16 @@ internal fun CustomHomeDashboard(
                     },
                 shape = MaterialTheme.shapes.medium,
                 border = if (editMode) BorderStroke(
-                    1.dp, MaterialTheme.colorScheme.primary
+                    if (hoverTarget == panel.id && activeDragId != panel.id) 3.dp else 1.dp,
+                    if (hoverTarget == panel.id && activeDragId != panel.id)
+                        MaterialTheme.colorScheme.tertiary
+                    else MaterialTheme.colorScheme.primary
                 ) else null,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
-                Column(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxWidth()) {
                     if (editMode) {
                         Row(
                             modifier = Modifier.fillMaxWidth().pointerInput(
@@ -167,34 +180,49 @@ internal fun CustomHomeDashboard(
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = {
                                         dragging = true
+                                        activeDragId = panel.id
+                                        hoverTarget = null
+                                        dragOrigin = positions[panel.id]?.center ?: Offset.Zero
                                         drag = Offset.Zero
                                     },
                                     onDrag = { change, amount ->
                                         change.consume()
                                         drag += amount
-                                        val source = positions[panel.id] ?: return@detectDragGesturesAfterLongPress
-                                        val center = source.center + drag
-                                        val hovered = positions.entries.firstOrNull {
+                                        val center = dragOrigin + drag
+                                        hoverTarget = positions.entries.firstOrNull {
                                             it.key != panel.id &&
-                                                layout.any { visiblePanel ->
+                                                liveLayout.any { visiblePanel ->
                                                     visiblePanel.id == it.key && visiblePanel.visible
                                                 } &&
                                                 it.value.contains(center)
                                         }?.key
-                                        if (hovered != null) {
-                                            updateLayout(HomePanelLayout.move(profile, layout, panel.id, hovered))
-                                            drag = Offset.Zero
-                                        }
                                     },
-                                    onDragEnd = { dragging = false; drag = Offset.Zero },
-                                    onDragCancel = { dragging = false; drag = Offset.Zero }
+                                    onDragEnd = {
+                                        hoverTarget?.let { target ->
+                                            updateLayout(
+                                                HomePanelLayout.move(profile, livePackedLayout, panel.id, target)
+                                            )
+                                        }
+                                        dragging = false
+                                        activeDragId = null
+                                        hoverTarget = null
+                                        drag = Offset.Zero
+                                    },
+                                    onDragCancel = {
+                                        dragging = false
+                                        activeDragId = null
+                                        hoverTarget = null
+                                        drag = Offset.Zero
+                                    }
                                 )
                             }.padding(start = 8.dp, top = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(Icons.Default.DragIndicator, contentDescription = "長押しして移動")
                             Text(
-                                HomePanelLayout.titles[panel.id].orEmpty(),
+                                if (hoverTarget == panel.id && activeDragId != panel.id)
+                                    "ここに移動"
+                                else HomePanelLayout.titles[panel.id].orEmpty(),
                                 style = MaterialTheme.typography.labelMedium,
                                 modifier = Modifier.weight(1f)
                             )
@@ -211,12 +239,41 @@ internal fun CustomHomeDashboard(
                         }
                     }
                     Box(
-                        Modifier.fillMaxWidth().weight(1f).padding(8.dp)
+                        Modifier.fillMaxWidth()
+                            .heightIn(max = (110 + panel.height * 110).dp)
                             .verticalScroll(rememberScrollState())
+                            .padding(8.dp)
                     ) {
                         panelContent(panel.id)
                     }
                     if (editMode) {
+                        val visibleIds = livePackedLayout.map { it.id }
+                        val index = visibleIds.indexOf(panel.id)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            TextButton(
+                                enabled = index > 0,
+                                onClick = {
+                                    if (index > 0) updateLayout(
+                                        HomePanelLayout.move(
+                                            profile, livePackedLayout, panel.id, visibleIds[index - 1]
+                                        )
+                                    )
+                                }
+                            ) { Text("前に移動") }
+                            TextButton(
+                                enabled = index in 0 until visibleIds.lastIndex,
+                                onClick = {
+                                    if (index in 0 until visibleIds.lastIndex) updateLayout(
+                                        HomePanelLayout.move(
+                                            profile, livePackedLayout, panel.id, visibleIds[index + 1]
+                                        )
+                                    )
+                                }
+                            ) { Text("後ろに移動") }
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
