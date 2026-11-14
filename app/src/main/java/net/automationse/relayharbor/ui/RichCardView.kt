@@ -1,14 +1,14 @@
 package net.automationse.relayharbor.ui
 
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.layout.Arrangement
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
@@ -31,143 +31,187 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import net.automationse.relayharbor.data.RichCard
 
+/**
+ * Compact: readable summary in notification lists.
+ * Standard: interactive card in chat, description on demand.
+ * Detailed: full card in the right-side inspector.
+ *
+ * All modes share one rendering component so scores, badges and actions stay consistent.
+ */
 @Composable
-fun RichCardView(card: RichCard) {
-    var expanded by remember { mutableStateOf(false) }
+internal fun RichCardView(
+    card: RichCard,
+    density: CardDensity = CardDensity.STANDARD
+) {
+    var expanded by remember(card.title) { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    val compact = density == CardDensity.COMPACT
+    val detailed = density == CardDensity.DETAILED
+    val showDescription = detailed || expanded
 
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp)
+        shape = RoundedCornerShape(if (compact) 12.dp else 18.dp)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Media is loaded only for currently visible cards; users can disable
-            // external image requests under Settings for privacy/data savings.
-            val showMedia = remember(context) {
-                WorkspaceUiStore(context).showRemoteThumbnails()
-            }
-            if (showMedia) {
+        Column(
+            modifier = Modifier.padding(if (compact) 10.dp else 14.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp)
+        ) {
+            if (!compact && remember(context) {
+                    WorkspaceUiStore(context).showRemoteThumbnails()
+                }
+            ) {
                 card.thumbnailUrl?.let { CardThumbnail(it, card.title) }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(card.title, fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        card.title,
+                        fontWeight = FontWeight.Bold,
+                        style = if (compact) MaterialTheme.typography.titleSmall
+                            else MaterialTheme.typography.titleMedium,
+                        maxLines = if (compact) 2 else Int.MAX_VALUE,
+                        overflow = TextOverflow.Ellipsis
+                    )
                     if (card.badge.isNotBlank()) {
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(9.dp),
                             color = MaterialTheme.colorScheme.secondaryContainer
                         ) {
-                            Text(card.badge, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer)
+                            Text(
+                                card.badge,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                style = MaterialTheme.typography.labelSmall
+                            )
                         }
                     }
                 }
                 card.score?.let { score ->
                     Surface(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.primaryContainer
                     ) {
-                        Column(
-                            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(1.dp)
-                        ) {
-                            Text(score.toString(), fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                style = MaterialTheme.typography.headlineSmall)
-                            Text("/ 100", color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                style = MaterialTheme.typography.labelSmall)
+                        Column(Modifier.padding(horizontal = 9.dp, vertical = 6.dp)) {
+                            Text(
+                                score.toString() + " / 100",
+                                style = if (compact) MaterialTheme.typography.labelLarge
+                                    else MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                         }
                     }
                 }
             }
-
-            if (card.metrics.isNotEmpty()) {
+            if (!compact && card.metrics.isNotEmpty()) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 card.metrics.forEach { metric ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(metric.label, style = MaterialTheme.typography.labelMedium)
-                        Text(metric.percent.toString() + "%", fontWeight = FontWeight.SemiBold,
-                            style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            metric.percent.toString() + "%",
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
                     LinearProgressIndicator(
-                        progress = { (metric.percent.coerceIn(0, 100)) / 100f },
+                        progress = { metric.percent.coerceIn(0, 100) / 100f },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
-
-            if (expanded && card.description.isNotBlank()) {
+            if (showDescription && card.description.isNotBlank() && !compact) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Text(card.description, style = MaterialTheme.typography.bodySmall)
             }
-
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                card.url?.let { link ->
-                    AssistChip(
-                        onClick = {
-                            runCatching {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
+            if (compact && card.description.isNotBlank()) {
+                Text(
+                    card.description,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (!compact) {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    card.url?.let { link ->
+                        AssistChip(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
+                                }
+                            },
+                            label = { Text("元のページ") },
+                            leadingIcon = {
+                                Icon(Icons.Default.OpenInNew, contentDescription = null)
                             }
-                        },
-                        label = { Text("記事を開く") },
-                        leadingIcon = {
-                            Icon(Icons.Default.OpenInNew, contentDescription = null)
-                        }
-                    )
-                }
-                card.actions.forEach { action ->
-                    when (action.kind) {
-                        "open_url" -> action.url?.let { safeLink ->
-                            AssistChip(
-                                onClick = {
-                                    runCatching {
-                                        context.startActivity(
-                                            Intent(Intent.ACTION_VIEW, Uri.parse(safeLink))
-                                        )
+                        )
+                    }
+                    card.actions.forEach { action ->
+                        when (action.kind) {
+                            "open_url" -> action.url?.let { safeLink ->
+                                AssistChip(
+                                    onClick = {
+                                        runCatching {
+                                            context.startActivity(
+                                                Intent(Intent.ACTION_VIEW, Uri.parse(safeLink))
+                                            )
+                                        }
+                                    },
+                                    label = { Text(action.label) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.OpenInNew, contentDescription = null)
                                     }
-                                },
-                                label = { Text(action.label) },
-                                leadingIcon = {
-                                    Icon(Icons.Default.OpenInNew, contentDescription = null)
-                                }
-                            )
-                        }
-                        "copy_text" -> action.text?.let { value ->
-                            AssistChip(
-                                onClick = { clipboard.setText(AnnotatedString(value)) },
-                                label = { Text(action.label) },
-                                leadingIcon = {
-                                    Icon(Icons.Default.ContentCopy, contentDescription = null)
-                                }
-                            )
+                                )
+                            }
+                            "copy_text" -> action.text?.let { value ->
+                                AssistChip(
+                                    onClick = { clipboard.setText(AnnotatedString(value)) },
+                                    label = { Text(action.label) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.ContentCopy, contentDescription = null)
+                                    }
+                                )
+                            }
                         }
                     }
-                }
-                if (card.description.isNotBlank()) {
+                    if (density == CardDensity.STANDARD && card.description.isNotBlank()) {
+                        AssistChip(
+                            onClick = { expanded = !expanded },
+                            label = { Text(if (expanded) "説明を閉じる" else "説明を見る") }
+                        )
+                    }
                     AssistChip(
-                        onClick = { expanded = !expanded },
-                        label = { Text(if (expanded) "閉じる" else "詳細を表示") }
+                        onClick = {
+                            clipboard.setText(
+                                AnnotatedString(
+                                    card.title + "\n" + card.description +
+                                        (card.score?.let { "\nスコア: " + it } ?: "")
+                                )
+                            )
+                        },
+                        label = { Text("コピー") },
+                        leadingIcon = {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null)
+                        }
                     )
                 }
-                AssistChip(
-                    onClick = {
-                        clipboard.setText(AnnotatedString(
-                            card.title + "\n" + card.description +
-                                (card.score?.let { "\nスコア: " + it } ?: "")
-                        ))
-                    },
-                    label = { Text("コピー") },
-                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) }
-                )
             }
         }
     }
