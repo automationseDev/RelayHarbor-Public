@@ -21,7 +21,7 @@ class HomeMasonryTest {
         assertEquals(500, HomeMasonry.totalHeight(placements))
     }
 
-    @Test fun wideTileStartsAfterTallestColumnWithoutOverlaps() {
+    @Test fun wideTileAllowsFollowingNarrowTileToBackfillAnEarlierGap() {
         val placements = HomeMasonry.place(
             columns = 4,
             spans = listOf(1, 2, 1, 4, 1),
@@ -32,8 +32,24 @@ class HomeMasonryTest {
         assertEquals(208, placements[1].widthPx)
         assertEquals(258, placements[3].topPx)
         assertEquals(424, placements[3].widthPx)
-        assertEquals(346, placements[4].topPx)
-        assertEquals(416, HomeMasonry.totalHeight(placements))
+        assertEquals(108, placements[4].topPx)
+        assertEquals(338, HomeMasonry.totalHeight(placements))
+    }
+
+    @Test fun widgetsAfterWidePanelFillTheShortColumnHole() {
+        val placements = HomeMasonry.place(
+            columns = 2,
+            spans = listOf(1, 1, 2, 1, 1),
+            heightsPx = listOf(500, 150, 100, 120, 120),
+            cellWidthPx = 140,
+            gapPx = 8
+        )
+        assertEquals(508, placements[2].topPx)
+        assertEquals(1, placements[3].firstColumn)
+        assertEquals(158, placements[3].topPx)
+        assertEquals(1, placements[4].firstColumn)
+        assertEquals(286, placements[4].topPx)
+        assertEquals(608, HomeMasonry.totalHeight(placements))
     }
 
     @Test fun allCardsAreLaidOutOnceAndNeverOverlap() {
