@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -50,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
@@ -72,6 +74,7 @@ internal fun CustomHomeDashboard(
     onShowHeaderChange: (Boolean) -> Unit,
     onLayoutChange: (List<HomePanel>) -> Unit,
     onReset: () -> Unit,
+    panelHeader: @Composable (String) -> Unit,
     panelContent: @Composable (String) -> Unit
 ) {
     val columns = HomePanelLayout.columns(profile)
@@ -348,11 +351,25 @@ internal fun CustomHomeDashboard(
                                 }
                             }
                         }
+                        // The section chrome is deliberately OUTSIDE the body scroll:
+                        // even when a long card scrolls, its title/actions remain visible.
+                        if (!editing) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .padding(horizontal = 12.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                panelHeader(panel.id)
+                            }
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Box(
                             modifier = Modifier.fillMaxWidth()
                                 .heightIn(max = (110 + panel.height * 110).dp)
+                                .clipToBounds()
                                 .verticalScroll(rememberScrollState())
-                                .padding(12.dp)
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
                         ) {
                             panelContent(panel.id)
                         }
