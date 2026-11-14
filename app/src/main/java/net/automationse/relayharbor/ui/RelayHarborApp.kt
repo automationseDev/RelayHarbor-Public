@@ -748,6 +748,10 @@ private fun HomeScreen(
                         runCatching { nativeHost.delete(id) }
                     }
                 },
+                panelTitle = { id ->
+                    HomePanelLayout.nativeWidgetId(id)?.let(nativeHost::widgetLabel)
+                        ?: HomePanelLayout.titles[id].orEmpty().ifBlank { "ホームカード" }
+                },
                 panelHeader = { id ->
                     HomePanelFixedHeader(
                         id = id,
