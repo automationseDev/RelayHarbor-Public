@@ -85,7 +85,7 @@ class IntegrationClient(private val relay: RelayClient = RelayClient()) {
             val serverVersion = health["version"]?.jsonPrimitive?.contentOrNull.orEmpty()
             val minimum = if (provider == "website") "0.6.0" else "0.5.0"
             if (AppUpdater.isNewer(minimum, serverVersion)) {
-                error("この連携にはRelayサーバーv$minimum以上が必要です。現在: v$serverVersion。サーバーを更新してください")
+                error("この連携にはRelayサーバーv${minimum}以上が必要です。現在: v$serverVersion。サーバーを更新してください")
             }
         }
         val payload = buildJsonObject {
