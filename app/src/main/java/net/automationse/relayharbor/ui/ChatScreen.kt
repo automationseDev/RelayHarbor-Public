@@ -277,8 +277,11 @@ private fun MessageTimelineItem(
                     } else {
                         RichCardView(card)
                     }
-                    NotificationActionBar(message, onNotificationAction)
                 }
+                if (message.sourcePackage.isNotBlank()) {
+                    SourceAppOpenButton(message.sourcePackage)
+                }
+                NotificationActionBar(message, onNotificationAction)
             }
         }
     }
