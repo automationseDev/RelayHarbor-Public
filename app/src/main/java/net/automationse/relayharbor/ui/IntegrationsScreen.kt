@@ -30,17 +30,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
@@ -51,6 +55,11 @@ import androidx.compose.ui.unit.dp
 import net.automationse.relayharbor.data.ChannelEntity
 import net.automationse.relayharbor.integration.IntegrationConnection
 import net.automationse.relayharbor.integration.IntegrationCredential
+import net.automationse.relayharbor.integration.LocalWebsiteChecker
+import net.automationse.relayharbor.integration.LocalWebsiteRules
+import net.automationse.relayharbor.integration.LocalWebsiteScheduler
+import net.automationse.relayharbor.integration.LocalWebsiteStore
+import net.automationse.relayharbor.integration.LocalWebsiteWatch
 import java.text.DateFormat
 import java.util.Date
 import androidx.compose.material.icons.Icons
@@ -108,20 +117,99 @@ fun IntegrationsScreen(
         mutableStateOf(uiStore.integrationListFilter())
     }
     var cardMode by rememberSaveable { mutableStateOf(uiStore.integrationCardLayout()) }
-    val visibleConnections = connections.filter { connection ->
-        (connectionQuery.isBlank() ||
-            connection.name.contains(connectionQuery, ignoreCase = true) ||
-            connection.channelName.contains(connectionQuery, ignoreCase = true) ||
-            connection.keyword.contains(connectionQuery, ignoreCase = true) ||
-            connection.feedUrl.contains(connectionQuery, ignoreCase = true)) &&
-            when (connectionType) {
-                "rss" -> connection.provider == "rss"
-                "website" -> connection.provider == "website"
-                "webhook" -> connection.provider in setOf("webhook", "github_actions")
-                "active" -> connection.enabled
-                else -> true
+    val localStore = remember(context) { LocalWebsiteStore(context) }
+    var localWatches by remember(context) { mutableStateOf(localStore.list()) }
+    var localCreateOpen by remember { mutableStateOf(false) }
+    var localEditing by remember { mutableStateOf<LocalWebsiteWatch?>(null) }
+    var localCheckingId by remember { mutableStateOf<String?>(null) }
+    var localFeedback by remember { mutableStateOf("") }
+    val localScope = rememberCoroutineScope()
+    DisposableEffect(context) {
+        val prefs = context.getSharedPreferences("local_website_watch_v1", Context.MODE_PRIVATE)
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key != null && key.startsWith("watch:")) {
+                localWatches = localStore.list()
             }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
+
+    fun saveLocal(watch: LocalWebsiteWatch?, form: LocalWebsiteForm): String? =
+        try {
+            require(localChannels.any { it.id == form.channelId }) {
+                "通知先チャンネルを選び直してください"
+            }
+            val saved = localStore.save(
+                watch?.id, form.name, form.url, form.channelId,
+                form.interval, form.selector, form.keyword, watch?.enabled ?: true
+            )
+            LocalWebsiteScheduler.schedule(context, saved)
+            localWatches = localStore.list()
+            localFeedback = if (watch == null) {
+                "端末内監視を登録しました。初回の「今すぐ確認」で監視基準を保存できます。"
+            } else "端末内監視を更新しました"
+            null
+        } catch (error: Exception) {
+            error.message ?: "監視設定を保存できませんでした"
+        }
+
+    fun toggleConnection(connection: IntegrationConnection, enabled: Boolean) {
+        val localId = IntegrationListPolicy.localWatchId(connection)
+        if (localId == null) {
+            onEdit(connection.copy(enabled = enabled))
+        } else {
+            val watch = localStore.get(localId) ?: return
+            try {
+                val saved = localStore.save(
+                    watch.id, watch.name, watch.url, watch.channelId,
+                    watch.intervalMinutes, watch.selector, watch.keyword, enabled
+                )
+                LocalWebsiteScheduler.schedule(context, saved)
+                localWatches = localStore.list()
+            } catch (error: Exception) {
+                localFeedback = "切替失敗: " + (error.message ?: "不明なエラー")
+            }
+        }
+    }
+
+    fun editConnection(connection: IntegrationConnection) {
+        val localId = IntegrationListPolicy.localWatchId(connection)
+        if (localId == null) editing = connection
+        else {
+            localEditing = localStore.get(localId)
+            if (localEditing == null) localFeedback = "監視設定が見つかりません"
+        }
+    }
+
+    fun checkConnection(connection: IntegrationConnection) {
+        val localId = IntegrationListPolicy.localWatchId(connection)
+        if (localId == null) {
+            if (IntegrationListPolicy.isPullSource(connection)) onRefreshFeed(connection.id)
+            else onTest(connection.id)
+        } else if (localCheckingId == null) {
+            localCheckingId = localId
+            localScope.launch {
+                try {
+                    localFeedback = LocalWebsiteChecker.check(
+                        context, localId, force = true
+                    ).detail
+                } catch (error: Exception) {
+                    localFeedback = "確認失敗: " + (error.message ?: "通信エラー")
+                } finally {
+                    localWatches = localStore.list()
+                    localCheckingId = null
+                }
+            }
+        }
+    }
+
+    val allConnections = connections + localWatches.map {
+        IntegrationListPolicy.fromLocal(it, localChannels)
+    }
+    val visibleConnections = allConnections.filter {
+        IntegrationListPolicy.matches(it, connectionType, connectionQuery)
+    }.sortedBy { it.name.lowercase() }
     val baseUrl = endpoint.trim().trimEnd('/')
 
     Scaffold(topBar = { TopAppBar(title = { Text("サービス連携") }) }) { padding ->
@@ -137,9 +225,10 @@ fun IntegrationsScreen(
                 style = MaterialTheme.typography.bodyMedium
             )
             LocalWebsiteMonitorSection(
-                channels = localChannels,
-                onCreateChannel = onCreateLocalChannel,
                 relayAvailable = configured,
+                localAvailable = localChannels.isNotEmpty() &&
+                    localWatches.size < LocalWebsiteRules.MAX_WATCHES,
+                onAddLocal = { localCreateOpen = true },
                 onOpenRelayWebsite = {
                     openRelayWebsiteWizard = true
                     createOpen = true
