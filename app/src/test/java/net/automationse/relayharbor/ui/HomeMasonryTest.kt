@@ -29,9 +29,9 @@ class HomeMasonryTest {
             cellWidthPx = 100,
             gapPx = 8
         )
-        assertEquals(316, placements[1].widthPx - placements[0].widthPx + 100) // 208-wide span
+        assertEquals(208, placements[1].widthPx)
         assertEquals(258, placements[3].topPx)
-        assertEquals(436, placements[3].widthPx)
+        assertEquals(424, placements[3].widthPx)
         assertEquals(346, placements[4].topPx)
         assertEquals(416, HomeMasonry.totalHeight(placements))
     }
