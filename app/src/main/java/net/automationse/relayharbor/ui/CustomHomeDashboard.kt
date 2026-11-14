@@ -63,8 +63,8 @@ import kotlin.math.roundToInt
 
 /**
  * Small, content-height based dashboard. Maintains original saved order and spans.
- * The grid itself uses a skyline rather than a rigid row: tall cards do not leave
- * empty spaces under shorter neighbors.
+ * Dense packing backfills earlier gaps with later narrow widgets; the persisted
+ * order and user-chosen panel dimensions stay unchanged.
  */
 @Composable
 internal fun CustomHomeDashboard(
@@ -147,17 +147,22 @@ internal fun CustomHomeDashboard(
                     }
                     HorizontalDivider()
                     Text(
-                        "取っ手を長押しして移動。各カードの︙でサイズ・順序・表示を編集できます。",
+                        "取っ手を長押しして移動。サイズ変更と情報ウィジェットの追加もできます。",
                         style = MaterialTheme.typography.bodySmall
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         TextButton(onClick = { pickerOpen = true }) {
                             Icon(Icons.Default.Add, contentDescription = null)
-                            Text("カードの表示")
+                            Text("カードを選択")
                         }
-                        TextButton(onClick = { resetOpen = true }) {
-                            Text("配置を初期化")
+                        TextButton(onClick = {
+                            emitLayout(HomePanelLayout.enableMiniWidgets(profile, activeLayout))
+                        }) {
+                            Text("情報カードを追加")
                         }
+                    }
+                    TextButton(onClick = { resetOpen = true }) {
+                        Text("配置を初期化")
                     }
                 }
             }
@@ -415,9 +420,13 @@ internal fun CustomHomeDashboard(
     if (pickerOpen) {
         AlertDialog(
             onDismissRequest = { pickerOpen = false },
-            title = { Text("表示するカード") },
+            title = { Text("カード・ウィジェットを選択") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Column(
+                    modifier = Modifier.heightIn(max = 460.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
                     layout.forEach { panel ->
                         Row(
                             Modifier.fillMaxWidth(),

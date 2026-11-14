@@ -620,6 +620,7 @@ private fun HomeScreen(
                 }
             ) { id ->
                 when (id) {
+                    "clock", "date", "weather", "agenda", "battery" -> HomeMiniWidget(id)
                     "overview" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                              Text("未読 $unreadCount 件")
