@@ -582,6 +582,7 @@ private fun HomeScreen(
     val profile = if (LocalConfiguration.current.screenWidthDp >= 600)
         HomePanelLayout.EXPANDED else HomePanelLayout.COVER
     var panels by remember(profile) { mutableStateOf(store.load(profile)) }
+    var compactGaps by remember(profile) { mutableStateOf(store.compactGaps(profile)) }
     var appDrawerOpen by rememberSaveable { mutableStateOf(false) }
     var favoritesPickerOpen by rememberSaveable { mutableStateOf(false) }
     val unreadCount = summaries.values.sumOf { it.unreadCount }
@@ -605,6 +606,11 @@ private fun HomeScreen(
                 layout = panels,
                 showHeader = showHeader,
                 onShowHeaderChange = onShowHeaderChange,
+                compactGaps = compactGaps,
+                onCompactGapsChange = { compact ->
+                    compactGaps = compact
+                    store.saveCompactGaps(profile, compact)
+                },
                 onLayoutChange = { changed ->
                     panels = HomePanelLayout.normalize(profile, changed)
                     store.save(profile, panels)
