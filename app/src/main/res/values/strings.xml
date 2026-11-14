@@ -2,4 +2,6 @@
 <resources>
     <string name="app_name">RelayHarbor</string>
     <string name="android_app_notification_service_name">RelayHarbor アプリ通知取り込み</string>
+    <string name="chrome_accessibility_service_name">RelayHarbor Chromeの再読み込み操作</string>
+    <string name="chrome_accessibility_service_description">利用者がフローティングランチャーで「Chrome再読み込み」を押した時に限り、Chrome画面の再読み込みボタンを探して押します。Chrome以外のアプリは操作しません。ページ内容・履歴・入力情報・URLを保存、送信しません。</string>
 </resources>
