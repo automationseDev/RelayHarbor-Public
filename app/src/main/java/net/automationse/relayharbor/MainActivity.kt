@@ -12,6 +12,7 @@ import net.automationse.relayharbor.notification.MessageNotifications
 import net.automationse.relayharbor.notification.NotificationOpenRequests
 import net.automationse.relayharbor.notification.NotificationPreferences
 import net.automationse.relayharbor.notification.NotificationSyncScheduler
+import net.automationse.relayharbor.integration.LocalWebsiteScheduler
 import net.automationse.relayharbor.notification.VisibleChat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -44,6 +45,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         NotificationSyncScheduler.refresh(this)
+        LocalWebsiteScheduler.sync(this)
         if (Build.VERSION.SDK_INT >= 33) {
             val prefs = NotificationPreferences(this)
             if (prefs.enabled() && !prefs.requestedRuntimePermission() &&
@@ -68,6 +70,7 @@ class MainActivity : ComponentActivity() {
         VisibleChat.appVisible = true
         DefaultHomeRole.refresh(this)
         NotificationSyncScheduler.refresh(this)
+        LocalWebsiteScheduler.sync(this)
     }
 
     override fun onPause() {

@@ -88,11 +88,13 @@ fun IntegrationsScreen(
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var createOpen by rememberSaveable { mutableStateOf(false) }
+    var openRelayWebsiteWizard by remember { mutableStateOf(false) }
     // Credentials are never stored in the editor draft.
     LaunchedEffect(credential?.connection?.id) {
         if (credential != null) {
             IntegrationDraftStore.clear(context)
             createOpen = false
+            openRelayWebsiteWizard = false
         }
     }
     var editing by remember { mutableStateOf<IntegrationConnection?>(null) }
@@ -131,8 +133,17 @@ fun IntegrationsScreen(
             Text("連携先をまとめて管理", style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold)
             Text(
-                "Androidアプリ通知は端末内で振り分けます。Webhook・RSS・Web更新監視はRelayサーバー経由で受信します。",
+                "Android通知と端末内Web監視はサーバー不要。Webhook・RSS・Relay監視は接続先を設定すると利用できます。",
                 style = MaterialTheme.typography.bodyMedium
+            )
+            LocalWebsiteMonitorSection(
+                channels = localChannels,
+                onCreateChannel = onCreateLocalChannel,
+                relayAvailable = configured,
+                onOpenRelayWebsite = {
+                    openRelayWebsiteWizard = true
+                    createOpen = true
+                }
             )
             AndroidAppNotificationSettingsCard(
                 channels = localChannels,
@@ -416,8 +427,13 @@ fun IntegrationsScreen(
     if (createOpen) {
         IntegrationSetupWizard(
             status = status,
-            onDismiss = { createOpen = false },
-            onDiscard = { IntegrationDraftStore.clear(context); createOpen = false },
+            initialTemplateKey = if (openRelayWebsiteWizard) "website" else null,
+            onDismiss = { createOpen = false; openRelayWebsiteWizard = false },
+            onDiscard = {
+                IntegrationDraftStore.clear(context)
+                createOpen = false
+                openRelayWebsiteWizard = false
+            },
             onCreate = { name, provider, channel, score, keyword, feedUrl, interval, selector ->
                 onAdd(name, provider, channel, score, keyword, feedUrl, interval, selector)
             }

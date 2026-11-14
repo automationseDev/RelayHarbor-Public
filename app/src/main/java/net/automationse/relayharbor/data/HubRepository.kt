@@ -136,6 +136,37 @@ class HubRepository(private val dao: HubDao) {
         )
     }
 
+    /**
+     * Device-local website updates use the same atomic dedup ledger and rich-card
+     * presentation as Relay events. No website HTML is uploaded to the Relay server.
+     */
+    suspend fun saveLocalWebsiteUpdate(
+        watchId: String,
+        generation: Long,
+        revision: Long,
+        channelId: Long,
+        sender: String,
+        excerpt: String,
+        card: RichCard
+    ): ImportedRelayMessage? {
+        val channel = dao.findChannelById(channelId)
+            ?: error("通知先チャンネルが削除されています。設定から選び直してください")
+        val source = "local-website:" + watchId + ":" + generation
+        val timestamp = System.currentTimeMillis()
+        val text = ("Webサイトの更新を検出しました\n" + excerpt).take(1000)
+        val inserted = dao.saveInboundMessage(
+            InboundEventEntity(source = source, sequence = revision),
+            MessageEntity(
+                channelId = channel.id, sender = sender.take(80),
+                text = text, kind = "card", cardJson = CardCodec.encode(card),
+                timestamp = timestamp, isRead = false
+            )
+        )
+        return if (!inserted) null else ImportedRelayMessage(
+            source, revision, channel.id, channel.name, sender.take(80), text, timestamp
+        )
+    }
+
     suspend fun chatHistory(channelId: Long): List<RelayChatTurn> =
         dao.recentMessages(channelId).asReversed()
             .filter { it.kind == "text" && (it.fromMe || it.sender in setOf("Dify", "OpenAI")) }
