@@ -79,6 +79,7 @@ internal fun CustomHomeDashboard(
     onCompactGapsChange: (Boolean) -> Unit,
     onLayoutChange: (List<HomePanel>) -> Unit,
     onReset: () -> Unit,
+    panelTitle: (String) -> String,
     panelHeader: @Composable (String) -> Unit,
     panelContent: @Composable (String) -> Unit
 ) {
@@ -314,7 +315,7 @@ internal fun CustomHomeDashboard(
                                     Text(
                                         if (targetId == panel.id && activeDragId != panel.id)
                                             "ここに移動"
-                                        else HomePanelLayout.titles[panel.id].orEmpty(),
+                                        else panelTitle(panel.id),
                                         style = MaterialTheme.typography.labelMedium
                                     )
                                 }
@@ -541,7 +542,7 @@ internal fun CustomHomeDashboard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                HomePanelLayout.titles[panel.id].orEmpty(),
+                                panelTitle(panel.id),
                                 modifier = Modifier.weight(1f)
                             )
                             Switch(
