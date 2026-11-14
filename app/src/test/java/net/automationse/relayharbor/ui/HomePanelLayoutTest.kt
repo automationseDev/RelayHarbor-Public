@@ -93,7 +93,7 @@ class HomePanelLayoutTest {
             val cards = HomePanelLayout.default(profile).map { it.copy(span = 1) }
             val rows = HomePanelLayout.rows(profile, cards)
             assertTrue(rows.all { row -> row.sumOf { it.span } <= HomePanelLayout.columns(profile) })
-            assertEquals(cards.size, rows.flatten().size)
+            assertEquals(cards.count { it.visible }, rows.flatten().size)
         }
     }
 }
