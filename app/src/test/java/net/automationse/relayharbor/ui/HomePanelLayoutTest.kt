@@ -67,6 +67,27 @@ class HomePanelLayoutTest {
             HomePanelLayout.decode(HomePanelLayout.COVER, "not json"))
     }
 
+    @Test fun localWidgetChoicesPersistAndOneTapFillKeepsExistingSizes() {
+        val original = HomePanelLayout.default(HomePanelLayout.COVER)
+        val edited = HomePanelLayout.resize(HomePanelLayout.COVER, original, "channels", -1, 2)
+        val hidden = HomePanelLayout.miniWidgetIds.fold(edited) { result, id ->
+            HomePanelLayout.visibility(HomePanelLayout.COVER, result, id, false)
+        }
+        val filled = HomePanelLayout.enableMiniWidgets(HomePanelLayout.COVER, hidden)
+        assertTrue(filled.filter { it.id in HomePanelLayout.miniWidgetIds }.all { it.visible })
+        assertEquals(
+            edited.first { it.id == "channels" },
+            filled.first { it.id == "channels" }
+        )
+        assertEquals(
+            filled,
+            HomePanelLayout.decode(
+                HomePanelLayout.COVER,
+                HomePanelLayout.encode(HomePanelLayout.COVER, filled)
+            )
+        )
+    }
+
     @Test fun rowsAlwaysStayWithinGridWidth() {
         listOf(HomePanelLayout.COVER, HomePanelLayout.EXPANDED).forEach { profile ->
             val cards = HomePanelLayout.default(profile).map { it.copy(span = 1) }
