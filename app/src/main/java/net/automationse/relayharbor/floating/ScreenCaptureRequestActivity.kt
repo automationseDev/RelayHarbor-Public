@@ -40,6 +40,9 @@ class ScreenCaptureRequestActivity : ComponentActivity() {
                 Toast.makeText(this, "スクショを開始できませんでした", Toast.LENGTH_LONG).show()
             }
         } else {
+            // The edge handle was already removed before showing consent.
+            // Always restore it when the user declines or dismisses the dialog.
+            FloatingMenuController.restoreAfterCapture(this)
             Toast.makeText(this, "スクリーンショットをキャンセルしました", Toast.LENGTH_SHORT).show()
         }
         finish()
@@ -52,7 +55,9 @@ class ScreenCaptureRequestActivity : ComponentActivity() {
             return
         }
         if (savedInstanceState != null) {
-            // After process recreation do not re-use or re-request stale consent.
+            // Do not re-use stale consent; restore our launcher if this
+            // transient activity was recreated while the user was deciding.
+            FloatingMenuController.restoreAfterCapture(this)
             finish()
             return
         }
@@ -60,6 +65,7 @@ class ScreenCaptureRequestActivity : ComponentActivity() {
             val projection = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             consent.launch(projection.createScreenCaptureIntent())
         } catch (_: Exception) {
+            FloatingMenuController.restoreAfterCapture(this)
             Toast.makeText(this, "画面キャプチャの許可画面を開けませんでした", Toast.LENGTH_LONG).show()
             finish()
         }
