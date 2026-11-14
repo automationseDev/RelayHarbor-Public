@@ -20,11 +20,12 @@ import httpx
 import connections
 import connection_transfer
 import rss
+import website_monitor
 import image_metadata
 from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="RelayHarbor Relay", version="0.5.2", docs_url=None, redoc_url=None)
+app = FastAPI(title="RelayHarbor Relay", version="0.6.0", docs_url=None, redoc_url=None)
 app.include_router(connections.router)
 app.include_router(connection_transfer.router)
 app.include_router(rss.router)
@@ -108,17 +109,20 @@ async def setup() -> None:
     init_db()
     connections.initialize(DATABASE)
     rss.initialize(DATABASE)
+    website_monitor.initialize(DATABASE)
     rss.start_worker()
+    website_monitor.start_worker()
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
     await rss.stop_worker()
+    await website_monitor.stop_worker()
 
 
 @app.get("/healthz")
 def health():
-    return {"ok": True, "service": "relayharbor", "version": "0.5.2"}
+    return {"ok": True, "service": "relayharbor", "version": "0.6.0"}
 
 
 @app.post("/v1/webhooks/{channel}", status_code=201)
