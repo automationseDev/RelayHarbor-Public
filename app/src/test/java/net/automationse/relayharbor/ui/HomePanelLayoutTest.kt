@@ -139,6 +139,57 @@ class HomePanelLayoutTest {
         assertFalse(restored.first { it.id == "weather" }.visible)
     }
 
+    @Test fun appWidgetIdsAreStrictlyValidatedAndCannotForgePanels() {
+        assertEquals("native_widget_42", HomePanelLayout.nativeId(42))
+        assertEquals(42, HomePanelLayout.nativeWidgetId("native_widget_42"))
+        listOf("native_widget_0", "native_widget_-2", "native_widget_01",
+            "native_widget_1fake", "native_widget_2147483648", "native_widget_")
+            .forEach { assertEquals(null, HomePanelLayout.nativeWidgetId(it)) }
+        assertFalse(HomePanelLayout.isNative("clock"))
+    }
+
+    @Test fun nativeWidgetsPersistAcrossRestartAndScreenProfiles() {
+        val cover = HomePanelLayout.COVER
+        val original = HomePanelLayout.default(cover)
+        val one = HomePanelLayout.addNative(cover, original, 52)
+        assertEquals(1, one.count { HomePanelLayout.isNative(it.id) })
+        val saved = HomePanelLayout.decode(cover, HomePanelLayout.encode(cover, one))
+        assertEquals(one, saved)
+        assertEquals(2, saved.first { it.id == "native_widget_52" }.span)
+        assertTrue(saved.first { it.id == "native_widget_52" }.manualHeight)
+        assertEquals(saved, HomePanelLayout.addNative(cover, saved, 52))
+        val expanded = HomePanelLayout.default(HomePanelLayout.EXPANDED)
+        assertFalse(expanded.any { HomePanelLayout.isNative(it.id) })
+        val toggled = HomePanelLayout.visibility(cover, saved, "native_widget_52", false)
+        assertFalse(toggled.first { it.id == "native_widget_52" }.visible)
+        val resized = HomePanelLayout.resize(cover, toggled, "native_widget_52", -1, 2)
+        assertEquals(1, resized.first { it.id == "native_widget_52" }.span)
+        assertEquals(5, resized.first { it.id == "native_widget_52" }.height)
+    }
+
+    @Test fun layoutPresetDoesNotOrphanBoundWidgetsButRemoveDoes() {
+        val profile = HomePanelLayout.EXPANDED
+        val layout = HomePanelLayout.addNative(profile, HomePanelLayout.default(profile), 101)
+        val rearranged = HomePanelLayout.preset(profile, HomePanelLayout.PRESET_INFORMATION, layout)
+        assertTrue(rearranged.any { it.id == "native_widget_101" })
+        assertEquals(1, rearranged.count { HomePanelLayout.isNative(it.id) })
+        val removed = HomePanelLayout.removeNative(profile, rearranged, "native_widget_101")
+        assertFalse(removed.any { HomePanelLayout.isNative(it.id) })
+        assertEquals(removed, HomePanelLayout.removeNative(profile, removed, "invalid"))
+    }
+
+    @Test fun nativeWidgetLimitIsPerScreenAndUnknownIdsStayRejected() {
+        val profile = HomePanelLayout.EXPANDED
+        val result = (1..30).fold(HomePanelLayout.default(profile)) { acc, id ->
+            HomePanelLayout.addNative(profile, acc, id)
+        }
+        assertEquals(HomePanelLayout.MAX_NATIVE_PER_PROFILE,
+            result.count { HomePanelLayout.isNative(it.id) })
+        assertTrue(HomePanelLayout.normalize(profile, result +
+            HomePanel("native_widget_bad", 1, 1)).none { it.id == "native_widget_bad" })
+        assertEquals(result, HomePanelLayout.decode(profile, HomePanelLayout.encode(profile, result)))
+    }
+
     @Test fun rowsAlwaysStayWithinGridWidth() {
         listOf(HomePanelLayout.COVER, HomePanelLayout.EXPANDED).forEach { profile ->
             val cards = HomePanelLayout.default(profile).map { it.copy(span = 1) }
