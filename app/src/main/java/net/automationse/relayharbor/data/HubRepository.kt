@@ -93,6 +93,43 @@ class HubRepository(private val dao: HubDao) {
         return newlyInserted
     }
 
+    /**
+     * Device-local only: OS notification content must never enter the Relay upload path.
+     * Uses the same transactional dedup ledger as inbound events, but its own source.
+     */
+    suspend fun importAndroidNotification(
+        sourcePackage: String,
+        notificationKey: String,
+        appName: String,
+        title: String,
+        body: String,
+        channelId: Long,
+        timestamp: Long
+    ): Boolean {
+        val channel = dao.findChannelById(channelId) ?: return false
+        if (channel.id <= 0L) return false
+        val source = net.automationse.relayharbor.notification.AndroidNotificationRules
+            .source(sourcePackage, notificationKey)
+        val sequence = net.automationse.relayharbor.notification.AndroidNotificationRules
+            .revision(title, body)
+        val displayedText = listOf(title, body)
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+            .take(net.automationse.relayharbor.notification.AndroidNotificationRules.MAX_TEXT_LENGTH)
+        return dao.saveInboundMessage(
+            InboundEventEntity(source, sequence),
+            MessageEntity(
+                channelId = channelId,
+                sender = appName.take(80),
+                text = displayedText,
+                kind = "app_notification",
+                timestamp = timestamp,
+                isRead = false,
+                sourcePackage = sourcePackage
+            )
+        )
+    }
+
     suspend fun chatHistory(channelId: Long): List<RelayChatTurn> =
         dao.recentMessages(channelId).asReversed()
             .filter { it.kind == "text" && (it.fromMe || it.sender in setOf("Dify", "OpenAI")) }

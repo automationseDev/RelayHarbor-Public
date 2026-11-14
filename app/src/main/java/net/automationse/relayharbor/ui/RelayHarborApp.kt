@@ -405,6 +405,8 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                 }
                 "integrations" -> IntegrationsScreen(
                     endpoint = settings.endpoint,
+                    localChannels = channels,
+                    onCreateLocalChannel = vm::createChannel,
                     configured = settings.mode != "local" && tokenConfigured &&
                         net.automationse.relayharbor.integration.RelayClient.validEndpoint(settings.endpoint),
                     connections = integrations,
