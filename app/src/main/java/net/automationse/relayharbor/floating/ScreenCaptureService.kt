@@ -263,7 +263,8 @@ class ScreenCaptureService : Service() {
         val message = if (Build.VERSION.SDK_INT >= 29)
             "写真のPictures/RelayHarborに保存しました"
         else "アプリの画像フォルダーに保存しました"
-        getSystemService(NotificationManager::class.java).notify(
+        runCatching {
+            getSystemService(NotificationManager::class.java).notify(
             SAVED_ID, NotificationCompat.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle("スクリーンショットを保存しました")
@@ -272,20 +273,23 @@ class ScreenCaptureService : Service() {
                 .addAction(0, "共有", share)
                 .setAutoCancel(true)
                 .build()
-        )
+            )
+        }
         Toast.makeText(this, "スクリーンショットを保存しました", Toast.LENGTH_SHORT).show()
     }
 
     private fun notifyError(message: String) {
         ensureChannel()
-        getSystemService(NotificationManager::class.java).notify(
+        runCatching {
+            getSystemService(NotificationManager::class.java).notify(
             SAVED_ID, NotificationCompat.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle("スクリーンショットを保存できませんでした")
                 .setContentText(message.take(160))
                 .setAutoCancel(true)
                 .build()
-        )
+            )
+        }
         Toast.makeText(this, "スクショ失敗: " + message.take(65), Toast.LENGTH_LONG).show()
     }
 
