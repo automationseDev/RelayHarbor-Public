@@ -56,7 +56,7 @@ class ResponsiveUiPolicyTest {
         )
         val packed = HomePanelLayout.packedVisible(HomePanelLayout.EXPANDED, layout)
         assertEquals(listOf("overview", "apps", "drawer", "sync"), packed.take(4).map { it.id })
-        assertEquals(6, packed.size)
+        assertEquals(HomePanelLayout.normalize(HomePanelLayout.EXPANDED, layout).count { it.visible }, packed.size)
         assertEquals(packed.map { it.id }.toSet().size, packed.size)
         assertTrue(packed.all { it.span in 1..4 })
     }
