@@ -57,6 +57,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
@@ -72,6 +73,8 @@ internal fun CustomHomeDashboard(
     layout: List<HomePanel>,
     showHeader: Boolean,
     onShowHeaderChange: (Boolean) -> Unit,
+    compactGaps: Boolean,
+    onCompactGapsChange: (Boolean) -> Unit,
     onLayoutChange: (List<HomePanel>) -> Unit,
     onReset: () -> Unit,
     panelHeader: @Composable (String) -> Unit,
@@ -81,6 +84,8 @@ internal fun CustomHomeDashboard(
     var editing by rememberSaveable { mutableStateOf(false) }
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
     var resetOpen by rememberSaveable { mutableStateOf(false) }
+    var presetOpen by rememberSaveable { mutableStateOf(false) }
+    var undoPreset by remember(profile) { mutableStateOf<List<HomePanel>?>(null) }
     val positions = remember(profile) { mutableMapOf<String, Rect>() }
     var activeDragId by remember(profile) { mutableStateOf<String?>(null) }
     var targetId by remember(profile) { mutableStateOf<String?>(null) }
@@ -161,8 +166,28 @@ internal fun CustomHomeDashboard(
                             Text("情報カードを追加")
                         }
                     }
-                    TextButton(onClick = { resetOpen = true }) {
-                        Text("配置を初期化")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("カード間の余白を最小化（3dp）", style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f))
+                        Switch(checked = compactGaps, onCheckedChange = onCompactGapsChange)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = { presetOpen = true }) {
+                            Text("おすすめ配置")
+                        }
+                        if (undoPreset != null) {
+                            TextButton(onClick = {
+                                undoPreset?.let(emitLayout)
+                                undoPreset = null
+                            }) { Text("配置を元に戻す") }
+                        }
+                        TextButton(onClick = { resetOpen = true }) {
+                            Text("初期化")
+                        }
                     }
                 }
             }
@@ -180,7 +205,8 @@ internal fun CustomHomeDashboard(
                 }
             }
         } else {
-            HomeMasonryGrid(columns = columns, panels = visible) { panel ->
+            HomeMasonryGrid(columns = columns, panels = visible,
+                gap = if (compactGaps) 3.dp else 10.dp) { panel ->
                 val currentLayout by rememberUpdatedState(activeLayout)
                 var dragging by remember(panel.id) { mutableStateOf(false) }
                 var displacement by remember(panel.id) { mutableStateOf(Offset.Zero) }
@@ -343,6 +369,15 @@ internal fun CustomHomeDashboard(
                                                 }
                                             )
                                         }
+                                        DropdownMenuItem(
+                                            text = { Text("高さを内容に合わせる") },
+                                            enabled = panel.manualHeight,
+                                            onClick = {
+                                                change(HomePanelLayout.automaticHeight(
+                                                    profile, currentLayout, panel.id
+                                                ))
+                                            }
+                                        )
                                         HorizontalDivider()
                                         DropdownMenuItem(
                                             text = { Text("カードを非表示") },
@@ -361,8 +396,9 @@ internal fun CustomHomeDashboard(
                         if (!editing) {
                             Box(
                                 modifier = Modifier.fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                                    .padding(horizontal = 12.dp),
+                                    .heightIn(min = if (panel.id in HomePanelLayout.miniWidgetIds)
+                                        36.dp else 48.dp)
+                                    .padding(horizontal = 10.dp),
                                 contentAlignment = Alignment.CenterStart
                             ) {
                                 panelHeader(panel.id)
@@ -371,10 +407,14 @@ internal fun CustomHomeDashboard(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Box(
                             modifier = Modifier.fillMaxWidth()
-                                .heightIn(max = (110 + panel.height * 110).dp)
+                                .then(
+                                    if (panel.manualHeight) Modifier.height(
+                                        (24 + panel.height * 96).dp
+                                    ) else Modifier.heightIn(max = (110 + panel.height * 110).dp)
+                                )
                                 .clipToBounds()
                                 .verticalScroll(rememberScrollState())
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
                             panelContent(panel.id)
                         }
@@ -417,6 +457,48 @@ internal fun CustomHomeDashboard(
         }
     }
 
+    if (presetOpen) {
+        AlertDialog(
+            onDismissRequest = { presetOpen = false },
+            title = { Text("ホームのおすすめ配置") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "現在のカード配置・表示設定を置き換えます。適用後も「配置を元に戻す」で取り消せます。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    listOf(
+                        Triple(HomePanelLayout.PRESET_BALANCED, "バランス型",
+                            "時計と天気、チャンネル、お気に入りアプリを両立"),
+                        Triple(HomePanelLayout.PRESET_INFORMATION, "情報重視型",
+                            "時計・天気・次の予定を上段に配置"),
+                        Triple(HomePanelLayout.PRESET_NOTIFICATIONS, "通知重視型",
+                            "チャンネルと最近の通知を優先表示")
+                    ).forEach { (id, title, description) ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            onClick = {
+                                undoPreset = activeLayout.toList()
+                                emitLayout(HomePanelLayout.preset(profile, id))
+                                presetOpen = false
+                            }
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text(title, style = MaterialTheme.typography.titleSmall)
+                                Text(description, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { presetOpen = false }) { Text("閉じる") }
+            }
+        )
+    }
     if (pickerOpen) {
         AlertDialog(
             onDismissRequest = { pickerOpen = false },

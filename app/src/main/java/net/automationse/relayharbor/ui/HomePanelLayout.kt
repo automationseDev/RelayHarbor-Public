@@ -18,7 +18,8 @@ internal data class HomePanel(
     val id: String,
     val span: Int,
     val height: Int,
-    val visible: Boolean = true
+    val visible: Boolean = true,
+    val manualHeight: Boolean = false
 )
 
 internal object HomePanelLayout {
@@ -76,6 +77,52 @@ internal object HomePanelLayout {
         return unique.values.toList()
     }
 
+    const val PRESET_BALANCED = "balanced"
+    const val PRESET_INFORMATION = "information"
+    const val PRESET_NOTIFICATIONS = "notifications"
+
+    /**
+     * One-tap layouts for narrow and unfolded screens. Only explicit preset selection
+     * changes existing sizes or visibility. No migration of saved custom layouts.
+     */
+    fun preset(profile: String, preset: String): List<HomePanel> {
+        val wide = profile == EXPANDED
+        val order = when (preset) {
+            PRESET_INFORMATION -> listOf("clock", "weather", "agenda", "date", "battery",
+                "channels", "drawer", "apps", "activity", "sync", "overview")
+            PRESET_NOTIFICATIONS -> listOf("channels", "activity", "clock", "weather",
+                "apps", "drawer", "agenda", "battery", "date", "sync", "overview")
+            else -> listOf("clock", "weather", "channels", "drawer", "apps",
+                "agenda", "activity", "battery", "date", "sync", "overview")
+        }
+        val original = default(profile).associateBy { it.id }
+        return order.map { id ->
+            val span = when (id) {
+                "apps" -> columns(profile)
+                "channels", "activity" -> when (preset) {
+                    PRESET_NOTIFICATIONS -> columns(profile)
+                    else -> if (wide) 2 else 1
+                }
+                "clock", "weather", "agenda" -> if (wide) 2 else 1
+                "drawer" -> if (wide) 2 else 1
+                "sync" -> if (wide) 2 else 1
+                else -> 1
+            }
+            val show = when (id) {
+                "overview" -> false
+                "sync" -> preset == PRESET_NOTIFICATIONS
+                "agenda" -> preset == PRESET_INFORMATION || preset == PRESET_BALANCED
+                else -> true
+            }
+            original.getValue(id).copy(span = span, visible = show, manualHeight = false)
+        }
+    }
+
+    fun automaticHeight(profile: String, current: List<HomePanel>, id: String): List<HomePanel> =
+        normalize(profile, current).map { panel ->
+            if (panel.id == id) panel.copy(manualHeight = false) else panel
+        }
+
     /** Show built-in information cards without modifying existing card sizes or order. */
     fun enableMiniWidgets(profile: String, current: List<HomePanel>): List<HomePanel> =
         normalize(profile, current).map { panel ->
@@ -99,7 +146,8 @@ internal object HomePanelLayout {
     ): List<HomePanel> = normalize(profile, current).map { panel ->
         if (panel.id != id) panel else panel.copy(
             span = (panel.span + widthStep).coerceIn(1, columns(profile)),
-            height = (panel.height + heightStep).coerceIn(1, 6)
+            height = (panel.height + heightStep).coerceIn(1, 6),
+            manualHeight = panel.manualHeight || heightStep != 0
         )
     }
 
@@ -158,6 +206,7 @@ internal object HomePanelLayout {
                 put("span", panel.span)
                 put("height", panel.height)
                 put("visible", panel.visible)
+                put("manualHeight", panel.manualHeight)
             })
         }
     }.toString()
@@ -173,7 +222,8 @@ internal object HomePanelLayout {
                 val span = obj["span"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
                 val height = obj["height"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
                 val visible = obj["visible"]?.jsonPrimitive?.booleanOrNull ?: true
-                HomePanel(id, span, height, visible)
+                val manualHeight = obj["manualHeight"]?.jsonPrimitive?.booleanOrNull ?: false
+                HomePanel(id, span, height, visible, manualHeight)
             }
             normalize(profile, parsed)
         }.getOrElse { default(profile) }
@@ -188,6 +238,13 @@ internal class HomePanelStore(context: Context) {
 
     fun load(profile: String): List<HomePanel> =
         HomePanelLayout.decode(profile, prefs.getString("panels_" + profile, null))
+
+    fun compactGaps(profile: String): Boolean =
+        prefs.getBoolean("compact_gaps_" + profile, true)
+
+    fun saveCompactGaps(profile: String, value: Boolean) {
+        prefs.edit().putBoolean("compact_gaps_" + profile, value).apply()
+    }
 
     fun save(profile: String, panels: List<HomePanel>) {
         prefs.edit().putString("panels_" + profile, HomePanelLayout.encode(profile, panels)).apply()

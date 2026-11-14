@@ -2,13 +2,16 @@ package net.automationse.relayharbor.ui
 
 import android.content.Context
 import android.os.BatteryManager
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -16,12 +19,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import net.automationse.relayharbor.calendar.DeviceCalendarEvent
@@ -39,14 +46,41 @@ import kotlin.math.roundToInt
 
 /** Small, opt-in local dashboard widgets, not arbitrary third-party code. */
 @Composable
-internal fun HomeMiniWidget(id: String) {
+internal fun HomeMiniWidget(id: String, onOpenCalendarWeather: () -> Unit) {
     when (id) {
         "clock" -> HomeClock()
         "date" -> HomeDate()
-        "weather" -> HomeWeather()
-        "agenda" -> HomeAgenda()
+        "weather" -> Box(
+            Modifier.fillMaxWidth().clickable(
+                role = Role.Button,
+                onClickLabel = "天気の詳細を開く",
+                onClick = onOpenCalendarWeather
+            )
+        ) { HomeWeather() }
+        "agenda" -> Box(
+            Modifier.fillMaxWidth().clickable(
+                role = Role.Button,
+                onClickLabel = "カレンダーを開く",
+                onClick = onOpenCalendarWeather
+            )
+        ) { HomeAgenda() }
         "battery" -> HomeBattery()
     }
+}
+
+/** Refresh on activity resume, even if HOME remains in the composition. */
+@Composable
+private fun rememberResumeEpoch(): Int {
+    val owner = LocalLifecycleOwner.current
+    var epoch by remember(owner) { mutableIntStateOf(0) }
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) epoch++
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    return epoch
 }
 
 @Composable
@@ -98,17 +132,31 @@ private fun HomeWeather() {
     val place = remember(store) { store.place() }
     var snapshot by remember(place) { mutableStateOf<WeatherSnapshot?>(store.cached()) }
     var failed by remember(place) { mutableStateOf(false) }
-    LaunchedEffect(place) {
-        if (place != null && snapshot == null) {
-            try {
-                val response = withContext(Dispatchers.IO) { WeatherService.forecast(place) }
-                snapshot = response.first
-                store.cache(response.second)
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (_: Exception) {
-                snapshot = store.cached(24 * 60 * 60 * 1000L)
-                failed = true
+    val resumeEpoch = rememberResumeEpoch()
+    LaunchedEffect(place, resumeEpoch) {
+        if (place == null) {
+            snapshot = null
+        } else {
+            while (true) {
+                val cached = store.cached()
+                if (cached != null) {
+                    snapshot = cached
+                    failed = false
+                } else {
+                    try {
+                        val response = withContext(Dispatchers.IO) { WeatherService.forecast(place) }
+                        snapshot = response.first
+                        store.cache(response.second)
+                        failed = false
+                    } catch (cancel: CancellationException) {
+                        throw cancel
+                    } catch (_: Exception) {
+                        snapshot = store.cached(24 * 60 * 60 * 1000L)
+                        failed = true
+                    }
+                }
+                // Home is disposed when not visible; never run a permanent worker.
+                delay(15 * 60_000L)
             }
         }
     }
@@ -130,7 +178,8 @@ private fun HomeWeather() {
                     style = MaterialTheme.typography.headlineSmall
                 )
                 Text(
-                    place.name + "・" + WeatherLabels.condition(forecast.weatherCode),
+                    place.name + "・" + WeatherLabels.condition(forecast.weatherCode) +
+                        if (failed) "（保存済み）" else "",
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
@@ -146,23 +195,29 @@ private fun HomeAgenda() {
     val permitted = DeviceCalendarReader.permitted(context)
     var next by remember(permitted) { mutableStateOf<DeviceCalendarEvent?>(null) }
     var loaded by remember(permitted) { mutableStateOf(false) }
-    LaunchedEffect(permitted) {
+    val resumeEpoch = rememberResumeEpoch()
+    LaunchedEffect(permitted, resumeEpoch) {
         if (permitted) {
-            try {
-                val now = LocalDate.now()
-                val events = withContext(Dispatchers.IO) {
-                    (listOf(YearMonth.from(now), YearMonth.from(now).plusMonths(1)))
-                        .flatMap { DeviceCalendarReader.eventsForMonth(context, it) }
+            while (true) {
+                try {
+                    val now = LocalDate.now()
+                    val events = withContext(Dispatchers.IO) {
+                        (listOf(YearMonth.from(now), YearMonth.from(now).plusMonths(1)))
+                            .flatMap { DeviceCalendarReader.eventsForMonth(context, it) }
+                    }
+                    next = events.firstOrNull { it.endMs > System.currentTimeMillis() }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: SecurityException) {
+                    next = null
+                } catch (_: Exception) {
+                    next = null
                 }
-                next = events.firstOrNull { it.endMs > System.currentTimeMillis() }
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (_: SecurityException) {
-                next = null
-            } catch (_: Exception) {
-                next = null
+                loaded = true
+                delay(15 * 60_000L)
             }
         }
+        next = null
         loaded = true
     }
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {

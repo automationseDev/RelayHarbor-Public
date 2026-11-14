@@ -320,6 +320,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     onOpen = ::openChannel,
                     onAllChannels = { page = "channels" },
                     onAllActivity = { page = "activity" },
+                    onOpenCalendarWeather = { page = "calendar_weather" },
                     onNotificationAction = vm::updateNotification,
                     showHeader = showHomeHeader,
                     onShowHeaderChange = { visible ->
@@ -562,6 +563,7 @@ private fun HomeScreen(
     onOpen: (Long) -> Unit,
     onAllChannels: () -> Unit,
     onAllActivity: () -> Unit,
+    onOpenCalendarWeather: () -> Unit,
     onNotificationAction: (Long, NotificationAction) -> Unit,
     showHeader: Boolean,
     onShowHeaderChange: (Boolean) -> Unit,
@@ -582,6 +584,7 @@ private fun HomeScreen(
     val profile = if (LocalConfiguration.current.screenWidthDp >= 600)
         HomePanelLayout.EXPANDED else HomePanelLayout.COVER
     var panels by remember(profile) { mutableStateOf(store.load(profile)) }
+    var compactGaps by remember(profile) { mutableStateOf(store.compactGaps(profile)) }
     var appDrawerOpen by rememberSaveable { mutableStateOf(false) }
     var favoritesPickerOpen by rememberSaveable { mutableStateOf(false) }
     val unreadCount = summaries.values.sumOf { it.unreadCount }
@@ -605,6 +608,11 @@ private fun HomeScreen(
                 layout = panels,
                 showHeader = showHeader,
                 onShowHeaderChange = onShowHeaderChange,
+                compactGaps = compactGaps,
+                onCompactGapsChange = { compact ->
+                    compactGaps = compact
+                    store.saveCompactGaps(profile, compact)
+                },
                 onLayoutChange = { changed ->
                     panels = HomePanelLayout.normalize(profile, changed)
                     store.save(profile, panels)
@@ -620,7 +628,9 @@ private fun HomeScreen(
                 }
             ) { id ->
                 when (id) {
-                    "clock", "date", "weather", "agenda", "battery" -> HomeMiniWidget(id)
+                    "clock", "date", "weather", "agenda", "battery" -> HomeMiniWidget(
+                        id, onOpenCalendarWeather
+                    )
                     "overview" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                              Text("未読 $unreadCount 件")
