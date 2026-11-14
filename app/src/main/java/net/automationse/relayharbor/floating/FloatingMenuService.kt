@@ -14,6 +14,8 @@ import android.graphics.Point
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -32,6 +34,19 @@ import kotlin.math.abs
  * notification snooping, or hidden capture occurs.
  */
 class FloatingMenuService : Service() {
+    companion object {
+        @Volatile private var running: FloatingMenuService? = null
+
+        /** In-process visibility toggle: no background service start is needed. */
+        fun hideDuringCapture(hidden: Boolean) {
+            val service = running ?: return
+            service.mainHandler.post {
+                if (running === service) service.setCaptureHidden(hidden)
+            }
+        }
+    }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var windowManager: WindowManager
     private lateinit var preferences: FloatingMenuPreferences
     private var handle: View? = null
@@ -48,6 +63,18 @@ class FloatingMenuService : Service() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         preferences = FloatingMenuPreferences(this)
+        running = this
+    }
+
+    private fun setCaptureHidden(hidden: Boolean) {
+        suspendedForScreenshot = hidden
+        if (hidden) {
+            handle?.visibility = View.INVISIBLE
+            hidePanel()
+        } else if (FloatingMenuController.allowed(this) && preferences.load().enabled) {
+            handle?.visibility = View.VISIBLE
+            reposition()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -58,18 +85,15 @@ class FloatingMenuService : Service() {
                 return START_NOT_STICKY
             }
             FloatingMenuController.ACTION_HIDE -> {
-                suspendedForScreenshot = true
-                handle?.visibility = View.INVISIBLE
-                hidePanel()
-                return START_STICKY
+                setCaptureHidden(true)
+                if (handle == null) stopSelf()
+                return START_NOT_STICKY
             }
             FloatingMenuController.ACTION_RESTORE -> {
-                suspendedForScreenshot = false
-                if (FloatingMenuController.allowed(this) && preferences.load().enabled) {
-                    handle?.visibility = View.VISIBLE
-                    reposition()
+                if (handle != null) {
+                    setCaptureHidden(false)
+                    return START_STICKY
                 }
-                return START_STICKY
             }
         }
         if (!FloatingMenuController.allowed(this) || !preferences.load().enabled) {
@@ -335,6 +359,7 @@ class FloatingMenuService : Service() {
     }
 
     override fun onDestroy() {
+        if (running === this) running = null
         hidePanel()
         handle?.let { runCatching { windowManager.removeView(it) } }
         handle = null
