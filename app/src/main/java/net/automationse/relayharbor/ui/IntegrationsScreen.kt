@@ -622,13 +622,26 @@ private fun ConnectionEditorDialog(
                     value = channel, onValueChange = { channel = it.take(60) },
                     label = { Text("通知チャンネル") }, singleLine = true
                 )
-                if (provider == "rss") {
+                if (provider in setOf("rss", "website")) {
                     OutlinedTextField(
                         value = feedUrl, onValueChange = { feedUrl = it.take(2048) },
-                        label = { Text("RSS / Atom URL（HTTPS）") },
-                        placeholder = { Text("https://example.com/feed.xml") },
+                        label = { Text(if (provider == "rss") "RSS / Atom URL（HTTPS）"
+                            else "監視するWebページURL（HTTPS）") },
+                        placeholder = { Text(if (provider == "rss")
+                            "https://example.com/feed.xml" else "https://example.com/news") },
                         singleLine = true
                     )
+                    if (provider == "website") {
+                        OutlinedTextField(
+                            value = cssSelector,
+                            onValueChange = { cssSelector = it.take(200) },
+                            label = { Text("監視する範囲（CSSセレクター・任意）") },
+                            placeholder = { Text("例: main, #news, .updates") },
+                            singleLine = true
+                        )
+                        Text("省略するとページ本文を監視。広告・時計などで誤通知が出る場合は、更新欄を指定してください。初回は通知しません。",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
                     Text("取得間隔: ${interval}分")
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(15, 30, 60).forEach { minutes ->
@@ -644,7 +657,7 @@ private fun ConnectionEditorDialog(
                                 label = { Text("${minutes / 60}時間") })
                         }
                     }
-                    Text("初回は最新3件、以降は新着記事のみ通知します。",
+                    if (provider == "rss") Text("初回は最新3件、以降は新着記事のみ通知します。",
                         style = MaterialTheme.typography.bodySmall)
                 } else {
                     Text("最低評価スコア: ${minScore.toInt()}（0 = 無制限）")
@@ -659,16 +672,20 @@ private fun ConnectionEditorDialog(
                     "キーワードがある場合、記事のタイトルまたは概要に一致するものだけ通知します。",
                     style = MaterialTheme.typography.bodySmall
                 )
+                if (provider == "website") Text(
+                    "キーワードを指定すると、更新後の監視範囲にその文字列がある場合のみ通知します。",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         },
         confirmButton = {
             Button(
                 enabled = name.isNotBlank() && channel.isNotBlank() &&
-                    (provider != "rss" || feedUrl.trim().startsWith("https://")),
+                    (provider !in setOf("rss", "website") || feedUrl.trim().startsWith("https://")),
                 onClick = {
                     onSave(name, provider, channel,
-                        if (provider == "rss") 0 else minScore.toInt(),
-                        keyword, feedUrl, interval)
+                        if (provider in setOf("rss", "website")) 0 else minScore.toInt(),
+                        keyword, feedUrl, interval, cssSelector)
                 }
             ) { Text(if (initial == null) "作成" else "保存") }
         },
@@ -696,6 +713,7 @@ internal object IntegrationDraftStore {
 
     fun save(context: Context, provider: String, name: String, channel: String,
              minScore: Int, keyword: String, feedUrl: String, interval: Int,
+             cssSelector: String = "",
              templateKey: String = "webhook", wizardStep: Int = 0) {
         val json = JSONObject()
             .put("provider", provider)
@@ -704,6 +722,7 @@ internal object IntegrationDraftStore {
             .put("minScore", minScore)
             .put("keyword", keyword)
             .put("feedUrl", feedUrl)
+            .put("cssSelector", cssSelector)
             .put("interval", interval)
             .put("templateKey", templateKey)
             .put("wizardStep", wizardStep)
