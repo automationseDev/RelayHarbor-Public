@@ -93,20 +93,14 @@ object FloatingMenuController {
     }
 
     fun hideForCapture(context: Context) {
-        runCatching {
-            context.startService(
-                Intent(context, FloatingMenuService::class.java).setAction(ACTION_HIDE)
-            )
+        if (FloatingMenuPreferences(context).load().enabled) {
+            FloatingMenuService.hideDuringCapture(true)
         }
     }
 
     fun restoreAfterCapture(context: Context) {
         if (FloatingMenuPreferences(context).load().enabled && allowed(context)) {
-            runCatching {
-                context.startService(
-                    Intent(context, FloatingMenuService::class.java).setAction(ACTION_RESTORE)
-                )
-            }
+            FloatingMenuService.hideDuringCapture(false)
         }
     }
 }
