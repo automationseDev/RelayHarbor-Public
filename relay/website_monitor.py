@@ -188,7 +188,7 @@ async def refresh(connection_id: str, force: bool = False):
         with server.connection() as db:
             row = db.execute(
                 """SELECT c.*, s.url, s.css_selector, s.poll_interval_minutes,
-                          s.last_checked, s.etag, s.modified, s.initialized,
+                          s.last_checked, s.last_success, s.etag, s.modified, s.initialized,
                           s.content_hash, s.content_text
                    FROM connections c
                    JOIN website_sources s ON s.connection_id=c.id
@@ -251,7 +251,8 @@ async def refresh(connection_id: str, force: bool = False):
                             "url": source["url"]
                         }
                         result = _connections()._insert_event(
-                            db, current, "website-" + digest,
+                            db, current,
+                            "website-" + str(source["last_success"]) + "-" + digest[:32],
                             "Web更新監視", "サイトの更新を検出しました: " + excerpt[:650],
                             card
                         )
