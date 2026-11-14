@@ -47,3 +47,14 @@ Official documentation: https://open-meteo.com/en/docs and https://open-meteo.co
 - No Room schema migration, NAS/Relay API changes, launcher permissions, or server deployment needed.
 - JVM tests cover calendar dates and all-day exclusive end, weather code/coordinate policy and new screen restore.
 - Manual device QA required: grant/deny calendar permission, monthly/recurring events, change timezone/locale, select a city in Japan, verify current/hourly/weekly cards, disable network and read cached forecast, Fold cover/open navigation, 6 tab labels on a narrow cover screen, and Play-store permission disclosure if publicly distributed.
+
+## v0.9.5 — Weekends, Japan public holidays and personal leave
+
+- Sunday and Japanese public holidays (including substitute/citizen holidays) are **soft red**; Saturday is **soft blue**; weekdays use the current theme's neutral background. Selected dates have outlines so their weekday/holiday tint remains visible.
+- The light palette uses red #FFE9EC and blue #E6F2FF. Dark mode uses muted dark-red and dark-blue surfaces to keep text readable.
+- Published official Japan public holidays in **2026 and 2027** are covered by deterministic policy and unit tests, including 2026-05-06 and 2026-09-22 and 2027-03-22. Other 2000–2099 dates follow current statutory rules; vernal/autumnal equinoxes beyond announced years use approximate astronomical formulas until official publication, and future law changes may require app updates. Sources: Cabinet Office https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html and National Astronomical Observatory annual announcements.
+- Tap a date then **休日を設定** to mark **有休**, **休日**, or **勤務日** and optionally attach a short label such as 代休 or 会社休業日. **標準表示に戻す** removes the override, restoring default weekend and holiday coloring.
+- Saved markers live only on the Android device in private SharedPreferences (calendar_personal_holidays_v1), persist across restart/upgrade, and are separate from Android CalendarContract events. No calendar write permission or uploads of personal leave to Relay, Open-Meteo, or AI services. Reinstalling the app may remove locally stored markers.
+- The calendar day grid and personal holiday actions work without READ_CALENDAR permission; accessing device appointments still requires explicit read permission.
+- No server/NAS update, database migration, background worker, or added permissions.
+- QA: Saturday/Sunday/holiday tints, selected-day outline, override of weekend and national holiday, restoring default, denied read permission, restart persistence, dark/light themes, Z Fold cover and expanded screen.
