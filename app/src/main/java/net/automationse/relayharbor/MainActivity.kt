@@ -28,6 +28,10 @@ import androidx.compose.ui.graphics.Color
 import net.automationse.relayharbor.ui.RelayHarborApp
 import net.automationse.relayharbor.ui.DefaultHomeRole
 import net.automationse.relayharbor.ui.HomeLauncherRequests
+import net.automationse.relayharbor.floating.FloatingMenuController
+import net.automationse.relayharbor.floating.FloatingMenuPolicy
+import net.automationse.relayharbor.floating.FloatingMenuPreferences
+import net.automationse.relayharbor.floating.FloatingNavigationRequests
 
 class MainActivity : ComponentActivity() {
     private val requestNotifications = registerForActivityResult(
@@ -71,6 +75,10 @@ class MainActivity : ComponentActivity() {
         DefaultHomeRole.refresh(this)
         NotificationSyncScheduler.refresh(this)
         LocalWebsiteScheduler.sync(this)
+        // Only restore if the user previously enabled it. Never auto-grant overlay access.
+        if (FloatingMenuPreferences(this).load().enabled &&
+            FloatingMenuController.allowed(this)
+        ) FloatingMenuController.enable(this)
     }
 
     override fun onPause() {
@@ -79,6 +87,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun onOpenIntent(intent: Intent?) {
+        val floatingTab = FloatingMenuPolicy.validTab(
+            intent?.getStringExtra(FloatingMenuController.EXTRA_TAB)
+        )
+        if (floatingTab != null) {
+            FloatingNavigationRequests.offer(floatingTab)
+            intent?.removeExtra(FloatingMenuController.EXTRA_TAB)
+            return
+        }
         if (intent?.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)) {
             HomeLauncherRequests.openHome()
             // Do not re-run HOME navigation after a configuration recreation.
