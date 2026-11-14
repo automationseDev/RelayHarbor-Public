@@ -144,7 +144,7 @@ internal fun WeatherForecastSection() {
                 OutlinedTextField(
                     value = cityQuery,
                     onValueChange = { cityQuery = it.take(80) },
-                    label = { Text("地域名（例：東京、名古屋、四日市）") },
+                    label = { Text("地域名（例：東京、大阪、札幌）") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
