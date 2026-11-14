@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -58,7 +59,7 @@ internal fun ChromeRefreshSettingsControls() {
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(androidx.compose.ui.unit.Dp(6f))
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Text(
             "Chromeの再読み込み",
