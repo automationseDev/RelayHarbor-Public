@@ -123,6 +123,7 @@ internal object IntegrationWizardRules {
 @Composable
 internal fun IntegrationSetupWizard(
     status: String,
+    initialTemplateKey: String? = null,
     onDismiss: () -> Unit,
     onDiscard: () -> Unit,
     onCreate: (String, String, String, Int, String, String, Int, String) -> Unit
@@ -136,9 +137,10 @@ internal fun IntegrationSetupWizard(
         "github_actions" -> "github"
         else -> "webhook"
     }
-    var templateKey by rememberSaveable {
+    var templateKey by rememberSaveable(initialTemplateKey) {
         mutableStateOf(
-            savedKey.takeIf { key -> integrationWizardPresets.any { it.key == key } }
+            initialTemplateKey?.takeIf { key -> integrationWizardPresets.any { it.key == key } }
+                ?: savedKey.takeIf { key -> integrationWizardPresets.any { it.key == key } }
                 ?: fallbackKey
         )
     }
