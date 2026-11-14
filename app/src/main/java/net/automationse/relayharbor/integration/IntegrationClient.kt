@@ -22,6 +22,7 @@ data class IntegrationConnection(
     val minScore: Int,
     val keyword: String,
     val feedUrl: String = "",
+    val cssSelector: String = "",
     val pollIntervalMinutes: Int = 30,
     val lastChecked: Long = 0,
     val lastSuccess: Long = 0,
@@ -50,6 +51,7 @@ class IntegrationClient(private val relay: RelayClient = RelayClient()) {
         minScore = obj.getValue("min_score").jsonPrimitive.intOrNull ?: 0,
         keyword = obj.getValue("keyword").jsonPrimitive.content,
         feedUrl = obj["feed_url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+        cssSelector = obj["css_selector"]?.jsonPrimitive?.contentOrNull.orEmpty(),
         pollIntervalMinutes = obj["poll_interval_minutes"]?.jsonPrimitive?.intOrNull ?: 30,
         lastChecked = obj["last_checked"]?.jsonPrimitive?.longOrNull ?: 0,
         lastSuccess = obj["last_success"]?.jsonPrimitive?.longOrNull ?: 0,
@@ -72,16 +74,18 @@ class IntegrationClient(private val relay: RelayClient = RelayClient()) {
         minScore: Int,
         keyword: String,
         feedUrl: String,
-        pollIntervalMinutes: Int
+        pollIntervalMinutes: Int,
+        cssSelector: String = ""
     ): IntegrationCredential {
-        require(provider in setOf("webhook", "github_actions", "rss"))
-        if (provider == "rss") {
+        require(provider in setOf("webhook", "github_actions", "rss", "website"))
+        if (provider == "rss" || provider == "website") {
             val health = Json.parseToJsonElement(
                 relay.execute(endpoint, clientToken, "/healthz")
             ).jsonObject
             val serverVersion = health["version"]?.jsonPrimitive?.contentOrNull.orEmpty()
-            if (AppUpdater.isNewer("0.5.0", serverVersion)) {
-                error("RSS登録にはRelayサーバーv0.5.0以上が必要です。現在のサーバー: v$serverVersion。NASでstableを更新してください")
+            val minimum = if (provider == "website") "0.6.0" else "0.5.0"
+            if (AppUpdater.isNewer(minimum, serverVersion)) {
+                error("この連携にはRelayサーバーv$minimum以上が必要です。現在: v$serverVersion。サーバーを更新してください")
             }
         }
         val payload = buildJsonObject {
@@ -90,9 +94,10 @@ class IntegrationClient(private val relay: RelayClient = RelayClient()) {
             put("channel_name", channel.trim())
             put("min_score", minScore)
             put("keyword", keyword.trim())
-            if (provider == "rss") {
+            if (provider == "rss" || provider == "website") {
                 put("feed_url", feedUrl.trim())
                 put("poll_interval_minutes", pollIntervalMinutes)
+                if (provider == "website") put("css_selector", cssSelector.trim())
             }
         }
         val response = Json.parseToJsonElement(
@@ -149,9 +154,11 @@ class IntegrationClient(private val relay: RelayClient = RelayClient()) {
             put("enabled", connection.enabled)
             put("min_score", connection.minScore)
             put("keyword", connection.keyword.trim())
-            if (connection.provider == "rss") {
+            if (connection.provider == "rss" || connection.provider == "website") {
                 put("feed_url", connection.feedUrl.trim())
                 put("poll_interval_minutes", connection.pollIntervalMinutes)
+                if (connection.provider == "website")
+                    put("css_selector", connection.cssSelector.trim())
             }
         }
         val response = relay.execute(
