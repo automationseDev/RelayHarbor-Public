@@ -44,7 +44,7 @@ internal object IntegrationListPolicy {
         connection.provider in setOf("website", LOCAL_WEBSITE)
 
     fun isPullSource(connection: IntegrationConnection): Boolean =
-        connection.provider in setOf("rss", "website", LOCAL_WEBSITE")
+        connection.provider in setOf("rss", "website", LOCAL_WEBSITE)
 
     fun matches(connection: IntegrationConnection, filter: String, query: String): Boolean {
         val needle = query.trim()
