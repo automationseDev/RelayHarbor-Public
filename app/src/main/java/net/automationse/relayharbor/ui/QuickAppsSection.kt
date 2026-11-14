@@ -188,14 +188,23 @@ private fun FavoriteAppTile(app: LaunchableApp, onClick: () -> Unit) {
 
 /** Favorite shortcuts shared by the in-app dashboard and optional system HOME. */
 @Composable
-internal fun QuickAppsSection() {
+internal fun QuickAppsSection(
+    showHeading: Boolean = true,
+    externalPickerOpen: Boolean? = null,
+    onExternalPickerChange: ((Boolean) -> Unit)? = null
+) {
     val context = LocalContext.current
     val store = remember(context) { FavoriteAppStore(context) }
     var favorites by remember { mutableStateOf(store.load()) }
     var displayMode by remember { mutableStateOf(store.layout()) }
     var apps by remember { mutableStateOf<List<LaunchableApp>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
-    var pickerOpen by rememberSaveable { mutableStateOf(false) }
+    var internalPickerOpen by rememberSaveable { mutableStateOf(false) }
+    val pickerOpen = externalPickerOpen ?: internalPickerOpen
+    fun setPickerOpen(value: Boolean) {
+        if (externalPickerOpen != null) onExternalPickerChange?.invoke(value)
+        else internalPickerOpen = value
+    }
     var query by rememberSaveable { mutableStateOf("") }
     var pickerTab by rememberSaveable { mutableStateOf("select") }
 
@@ -229,16 +238,18 @@ internal fun QuickAppsSection() {
     val pinnedApps = favorites.mapNotNull { appsByKey[it] }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text("お気に入りアプリ", fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleMedium)
-            TextButton(onClick = { pickerOpen = true }) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("追加・編集")
+        if (showHeading) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("お気に入りアプリ", fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = { setPickerOpen(true) }) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("追加・編集")
+                }
             }
         }
         if (pinnedApps.isNotEmpty()) {
@@ -322,7 +333,7 @@ internal fun QuickAppsSection() {
             }
         }
         AlertDialog(
-            onDismissRequest = { pickerOpen = false },
+            onDismissRequest = { setPickerOpen(false) },
             title = { Text("ホームに表示するアプリ") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -412,7 +423,7 @@ internal fun QuickAppsSection() {
                 }
             },
             confirmButton = {
-                Button(onClick = { pickerOpen = false }) { Text("完了") }
+                Button(onClick = { setPickerOpen(false) }) { Text("完了") }
             }
         )
     }
