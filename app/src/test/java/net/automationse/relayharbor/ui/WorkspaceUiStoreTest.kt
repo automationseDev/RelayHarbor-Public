@@ -6,7 +6,7 @@ import org.junit.Test
 /** Only safe known screen/filter values are restored from old/corrupt prefs. */
 class WorkspaceUiStoreTest {
     @Test fun restoresKnownTabs() {
-        listOf("home", "channels", "activity", "integrations", "settings", "chat")
+        listOf("home", "calendar_weather", "channels", "activity", "integrations", "settings", "chat")
             .forEach { assertEquals(it, WorkspaceUiStore.safePage(it)) }
         assertEquals("home", WorkspaceUiStore.safePage(null))
         assertEquals("home", WorkspaceUiStore.safePage("unknown"))
