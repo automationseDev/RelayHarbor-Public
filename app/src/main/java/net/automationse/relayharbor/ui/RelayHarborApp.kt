@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -42,6 +43,8 @@ import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -954,14 +957,10 @@ private fun ChannelListScreen(
     var pendingDelete by remember { mutableStateOf<ChannelEntity?>(null) }
     val context = LocalContext.current
     val notificationPrefs = remember(context) { NotificationPreferences(context) }
-
-    val filtered = channels.filter { channel ->
-        channel.name.contains(query, ignoreCase = true) &&
-            (filter != "unread" || (summaries[channel.id]?.unreadCount ?: 0) > 0)
-    }
-    val visible = if (filter == "recent") {
-        filtered.sortedByDescending { summaries[it.id]?.lastTimestamp ?: 0L }
-    } else filtered
+    val pinStore = remember(context) { ChannelPinStore(context) }
+    var pinned by remember(context) { mutableStateOf(pinStore.load()) }
+    val visible = ChannelPinPolicy.visible(channels, summaries, query, filter, pinned)
+    val unreadTotal = channels.sumOf { summaries[it.id]?.unreadCount ?: 0 }
 
     Scaffold(
         topBar = { WorkspaceBar("チャンネル", "会話・AI・Botをまとめて管理") },
@@ -992,32 +991,51 @@ private fun ChannelListScreen(
             )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                modifier = Modifier.horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 2.dp)
             ) {
-                listOf("all" to "すべて", "recent" to "最近", "unread" to "未読").forEach { (value, label) ->
+                listOf("all" to "すべて", "pinned" to "お気に入り",
+                    "recent" to "最近", "unread" to "未読").forEach { (value, label) ->
                     FilterChip(selected = filter == value, onClick = { onFilterChange(value) },
                         label = { Text(label) })
                 }
             }
             Text(
-                "チャンネル  " + visible.size,
+                "チャンネル " + visible.size + " 件・未読 " + unreadTotal + " 件",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
             )
             if (visible.isEmpty()) {
-                EmptyHint(if (filter == "unread") "未読メッセージはありません。"
-                    else "該当するチャンネルはありません。")
+                EmptyHint(when (filter) {
+                    "unread" -> "未読メッセージはありません。"
+                    "pinned" -> "お気に入りはまだありません。チャンネルの︙から固定できます。"
+                    else -> "該当するチャンネルはありません。"
+                })
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 92.dp)
                 ) {
-                    items(visible, key = { it.id }) { channel ->
+                    itemsIndexed(visible, key = { _, channel -> channel.id }) { index, channel ->
+                        if (query.isBlank() && filter != "pinned" && filter != "unread") {
+                            val firstPinned = channel.id in pinned &&
+                                (index == 0 || visible[index - 1].id !in pinned)
+                            val firstOther = channel.id !in pinned &&
+                                (index == 0 || visible[index - 1].id in pinned)
+                            if (firstPinned || firstOther) {
+                                Text(if (firstPinned) "★ お気に入り" else "すべてのチャンネル",
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(start = 18.dp, top = 12.dp, bottom = 5.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.weight(1f)) {
                                 ChannelItem(channel, summaries[channel.id],
-                                    onClick = { onSelect(channel.id) })
+                                    onClick = { onSelect(channel.id) },
+                                    pinned = channel.id in pinned)
                             }
                             Box {
                                 var showMenu by remember { mutableStateOf(false) }
@@ -1025,6 +1043,18 @@ private fun ChannelListScreen(
                                     Icon(Icons.Default.MoreVert, contentDescription = "チャンネルの操作")
                                 }
                                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (channel.id in pinned)
+                                            "お気に入りを解除" else "お気に入りに固定") },
+                                        leadingIcon = { Icon(if (channel.id in pinned)
+                                            Icons.Default.Star else Icons.Default.StarBorder,
+                                            contentDescription = null) },
+                                        onClick = {
+                                            pinned = ChannelPinPolicy.toggle(pinned, channel.id)
+                                            pinStore.save(pinned)
+                                            showMenu = false
+                                        }
+                                    )
                                     var channelAlertsEnabled by remember(channel.id) {
                                         mutableStateOf(notificationPrefs.channelEnabled(channel.id))
                                     }
@@ -1075,6 +1105,8 @@ private fun ChannelListScreen(
             text = { Text("「" + channel.name + "」のメッセージ履歴も削除されます。") },
             confirmButton = {
                 TextButton(onClick = {
+                    pinned = pinned - channel.id
+                    pinStore.save(pinned)
                     onDelete(channel.id)
                     pendingDelete = null
                 }) { Text("削除") }
@@ -1090,7 +1122,8 @@ private fun ChannelListScreen(
 private fun ChannelItem(
     channel: ChannelEntity,
     summary: ChannelSummary?,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    pinned: Boolean = false
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
@@ -1104,8 +1137,13 @@ private fun ChannelItem(
             }
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("# " + channel.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("# " + channel.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f, fill = false))
+                if (pinned) Icon(Icons.Default.Star, contentDescription = "お気に入り",
+                    modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.tertiary)
+            }
             val preview = when {
                 summary?.lastTimestamp == null -> "まだメッセージがありません"
                 summary.lastText.isNullOrBlank() && summary.lastKind == "card" -> "評価カード"
