@@ -8,12 +8,12 @@ import org.junit.Test
 class IntegrationWizardRulesTest {
     @Test fun allPresetsMapToSupportedBackendTypes() {
         assertEquals(
-            listOf("webhook", "rss", "github", "dify", "n8n"),
+            listOf("webhook", "rss", "website", "github", "dify", "n8n"),
             integrationWizardPresets.map { it.key }
         )
         assertTrue(
             integrationWizardPresets.all {
-                it.provider in setOf("webhook", "github_actions", "rss")
+                it.provider in setOf("webhook", "github_actions", "rss", "website")
             }
         )
     }
@@ -40,6 +40,25 @@ class IntegrationWizardRulesTest {
         )
         approved.forEach { assertTrue("Should accept: " + it, IntegrationWizardRules.validRssUrl(it)) }
         invalid.forEach { assertFalse("Should reject: " + it, IntegrationWizardRules.validRssUrl(it)) }
+    }
+
+    @Test fun websiteMonitorRequiresPublicHttpsAndRejectsInvalidSelector() {
+        assertTrue(IntegrationWizardRules.validForReview(
+            "サイト更新", "Web更新", "website", "https://example.org/news", "#news"
+        ))
+        assertTrue(IntegrationWizardRules.validForReview(
+            "サイト更新", "Web更新", "website", "https://example.org/news"
+        ))
+        assertFalse(IntegrationWizardRules.validForReview(
+            "サイト更新", "Web更新", "website", "http://example.org/news", "#news"
+        ))
+        assertFalse(IntegrationWizardRules.validForReview(
+            "サイト更新", "Web更新", "website", "https://localhost/news", "#news"
+        ))
+        assertFalse(IntegrationWizardRules.validForReview(
+            "サイト更新", "Web更新", "website", "https://example.org/news",
+            "a".repeat(201)
+        ))
     }
 
     @Test fun webhookAndDifyTemplatesDoNotNeedRssUrl() {

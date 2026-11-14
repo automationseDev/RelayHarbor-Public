@@ -242,7 +242,8 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
 
     fun createIntegration(
         name: String, provider: String, channelName: String, minScore: Int,
-        keyword: String, feedUrl: String, pollIntervalMinutes: Int
+        keyword: String, feedUrl: String, pollIntervalMinutes: Int,
+        cssSelector: String = ""
     ) {
         viewModelScope.launch {
             integrationStatus.value = "連携先を登録しています…"
@@ -250,10 +251,14 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
                 val (endpoint, token) = integrationAuth()
                 newIntegrationCredential.value = integrationClient.create(
                     endpoint, token, name, provider, channelName, minScore, keyword,
-                    feedUrl, pollIntervalMinutes
+                    feedUrl, pollIntervalMinutes, cssSelector
                 )
                 integrations.value = integrationClient.list(endpoint, token)
-                integrationStatus.value = if (provider == "rss") "RSS連携を作成しました。「今すぐ取得」で記事を確認できます" else "連携先を作成しました。専用トークンは今回だけ表示されます"
+                integrationStatus.value = when (provider) {
+                    "rss" -> "RSS連携を作成しました。「今すぐ取得」で記事を確認できます"
+                    "website" -> "Web監視を作成しました。「今すぐ確認」で初回の基準を保存してください"
+                    else -> "連携先を作成しました。専用トークンは今回だけ表示されます"
+                }
             } catch (error: Exception) {
                 integrationStatus.value = "登録失敗：" + (error.message ?: "通信エラー")
             }
@@ -343,15 +348,15 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshRssIntegration(id: String) {
         viewModelScope.launch {
-            integrationStatus.value = "RSSの新着記事を取得しています…"
+            integrationStatus.value = "Web/RSSの更新を確認しています…"
             try {
                 val (endpoint, token) = integrationAuth()
                 val count = integrationClient.refreshRss(endpoint, token, id)
                 integrations.value = integrationClient.list(endpoint, token)
-                integrationStatus.value = "RSS取得完了：新着 $count 件"
+                integrationStatus.value = "確認完了：新規通知 $count 件（初回は基準の保存のみ）"
                 if (count > 0) syncNow()
             } catch (error: Exception) {
-                integrationStatus.value = "RSS取得失敗：" + (error.message ?: "通信エラー")
+                integrationStatus.value = "更新確認失敗：" + (error.message ?: "通信エラー")
                 // refresh the last_error field on the connection card
                 runCatching {
                     val (endpoint, token) = integrationAuth()

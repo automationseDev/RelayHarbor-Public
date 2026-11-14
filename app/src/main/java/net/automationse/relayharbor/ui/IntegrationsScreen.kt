@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -70,7 +71,7 @@ fun IntegrationsScreen(
     onExport: (Uri) -> Unit,
     onImport: (Uri) -> Unit,
     onRefresh: () -> Unit,
-    onAdd: (String, String, String, Int, String, String, Int) -> Unit,
+    onAdd: (String, String, String, Int, String, String, Int, String) -> Unit,
     onEdit: (IntegrationConnection) -> Unit,
     onTest: (String) -> Unit,
     onRefreshFeed: (String) -> Unit,
@@ -113,7 +114,8 @@ fun IntegrationsScreen(
             connection.feedUrl.contains(connectionQuery, ignoreCase = true)) &&
             when (connectionType) {
                 "rss" -> connection.provider == "rss"
-                "webhook" -> connection.provider != "rss"
+                "website" -> connection.provider == "website"
+                "webhook" -> connection.provider in setOf("webhook", "github_actions")
                 "active" -> connection.enabled
                 else -> true
             }
@@ -129,7 +131,7 @@ fun IntegrationsScreen(
             Text("連携先をまとめて管理", style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold)
             Text(
-                "Androidアプリ通知は端末内で振り分けます。Webhook・RSSはRelayサーバー経由で受信します。",
+                "Androidアプリ通知は端末内で振り分けます。Webhook・RSS・Web更新監視はRelayサーバー経由で受信します。",
                 style = MaterialTheme.typography.bodyMedium
             )
             AndroidAppNotificationSettingsCard(
@@ -167,7 +169,7 @@ fun IntegrationsScreen(
                     }
                     Text(
                         if (transferBusy) "連携設定の転送中です…"
-                        else "JSONで連携名・通知先・フィルター・RSS設定を移行。認証トークンは含めません。インポートでは新規Webhookのトークンを再発行します。",
+                        else "連携名・通知先・RSS/Web監視設定をJSONで移行。認証トークンは含めません。Webhookは新しいトークンを発行します。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -191,9 +193,13 @@ fun IntegrationsScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 listOf("all" to "すべて", "rss" to "RSS",
-                    "webhook" to "Webhook", "active" to "有効").forEach { (type, label) ->
+                    "website" to "Web監視", "webhook" to "Webhook",
+                    "active" to "有効").forEach { (type, label) ->
                     FilterChip(
                         selected = connectionType == type,
                         onClick = {
@@ -261,7 +267,7 @@ fun IntegrationsScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    "${if (connection.provider == "rss") "RSS" else if (connection.provider == "github_actions") "GitHub" else "Webhook"} · #${connection.channelName}",
+                                    "${when (connection.provider) { "rss" -> "RSS"; "website" -> "Web監視"; "github_actions" -> "GitHub"; else -> "Webhook" }} · #${connection.channelName}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -298,7 +304,7 @@ fun IntegrationsScreen(
                                         text = { Text("URLをコピー") },
                                         onClick = {
                                             menuOpen = false
-                                            val url = if (connection.provider == "rss")
+                                            val url = if (connection.provider in setOf("rss", "website"))
                                                 connection.feedUrl
                                             else baseUrl + connection.path
                                             clipboard.setText(AnnotatedString(url))
@@ -307,18 +313,18 @@ fun IntegrationsScreen(
                                     DropdownMenuItem(
                                         text = {
                                             Text(
-                                                if (connection.provider == "rss") "今すぐ取得"
+                                                if (connection.provider in setOf("rss", "website")) "今すぐ確認"
                                                 else "テスト通知"
                                             )
                                         },
                                         enabled = connection.enabled,
                                         onClick = {
                                             menuOpen = false
-                                            if (connection.provider == "rss") onRefreshFeed(connection.id)
+                                            if (connection.provider in setOf("rss", "website")) onRefreshFeed(connection.id)
                                             else onTest(connection.id)
                                         }
                                     )
-                                    if (connection.provider != "rss") {
+                                    if (connection.provider !in setOf("rss", "website")) {
                                         DropdownMenuItem(
                                             text = { Text("鍵更新") },
                                             onClick = { menuOpen = false; rotating = connection }
@@ -342,6 +348,7 @@ fun IntegrationsScreen(
                                 Text(connection.name, fontWeight = FontWeight.Bold)
                                 Text(when (connection.provider) {
                                     "rss" -> "RSS / Atom フィード"
+                                    "website" -> "RSS不要・Webページ更新監視"
                                     "github_actions" -> "GitHub Actions JSON Webhook"
                                     else -> "カスタムWebhook"
                                 }, style = MaterialTheme.typography.labelSmall,
@@ -353,8 +360,12 @@ fun IntegrationsScreen(
                             )
                         }
                         Text("チャンネル: #${connection.channelName}")
-                        if (connection.provider == "rss") {
+                        if (connection.provider in setOf("rss", "website")) {
                             Text(connection.feedUrl, style = MaterialTheme.typography.bodySmall)
+                            if (connection.provider == "website") Text(
+                                "監視範囲: " + connection.cssSelector.ifBlank { "ページの本文全体" },
+                                style = MaterialTheme.typography.bodySmall
+                            )
                             Text("取得間隔: ${connection.pollIntervalMinutes}分 / キーワード: ${connection.keyword.ifBlank { "なし" }}",
                                 style = MaterialTheme.typography.bodySmall)
                             if (connection.lastSuccess > 0) Text(
@@ -371,7 +382,7 @@ fun IntegrationsScreen(
                                     clipboard.setText(AnnotatedString(connection.feedUrl))
                                 }) { Text("URLコピー") }
                                 TextButton(onClick = { onRefreshFeed(connection.id) },
-                                    enabled = connection.enabled) { Text("今すぐ取得") }
+                                    enabled = connection.enabled) { Text(if (connection.provider == "website") "今すぐ確認" else "今すぐ取得") }
                             }
                         } else {
                             Text("最低評価スコア: ${connection.minScore} / キーワード: ${connection.keyword.ifBlank { "なし" }}",
@@ -386,7 +397,7 @@ fun IntegrationsScreen(
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(onClick = { editing = connection }) { Text("編集") }
-                            if (connection.provider != "rss") {
+                            if (connection.provider !in setOf("rss", "website")) {
                                 TextButton(onClick = { rotating = connection }) { Text("鍵更新") }
                             }
                             TextButton(onClick = { deleting = connection }) { Text("削除") }
@@ -396,7 +407,7 @@ fun IntegrationsScreen(
                 }
             }
             HorizontalDivider()
-            Text("RSSは公開HTTPSフィードに対応（15分〜24時間間隔）。新着記事のタイトル・概要・元記事リンクを表示します。",
+            Text("RSSとWeb更新監視は公開HTTPSサイトに対応（15分〜24時間間隔）。Web監視の初回は基準保存のみ。JavaScript生成やログイン必須のページは対象外です。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -407,8 +418,8 @@ fun IntegrationsScreen(
             status = status,
             onDismiss = { createOpen = false },
             onDiscard = { IntegrationDraftStore.clear(context); createOpen = false },
-            onCreate = { name, provider, channel, score, keyword, feedUrl, interval ->
-                onAdd(name, provider, channel, score, keyword, feedUrl, interval)
+            onCreate = { name, provider, channel, score, keyword, feedUrl, interval, selector ->
+                onAdd(name, provider, channel, score, keyword, feedUrl, interval, selector)
             }
         )
     }
@@ -416,11 +427,11 @@ fun IntegrationsScreen(
         ConnectionEditorDialog(
             initial = original,
             onDismiss = { editing = null },
-            onSave = { name, _, channel, score, keyword, feedUrl, interval ->
+            onSave = { name, _, channel, score, keyword, feedUrl, interval, selector ->
                 onEdit(original.copy(
                     name = name, channelName = channel,
                     minScore = score, keyword = keyword,
-                    feedUrl = feedUrl, pollIntervalMinutes = interval
+                    feedUrl = feedUrl, pollIntervalMinutes = interval, cssSelector = selector
                 ))
                 editing = null
             }
@@ -460,11 +471,17 @@ fun IntegrationsScreen(
         AlertDialog(
             // Do not silently discard a freshly created one-time token.
             onDismissRequest = {},
-            title = { Text(if (created.connection.provider == "rss") "RSSを登録しました" else "連携を作成しました") },
+            title = { Text(when (created.connection.provider) {
+                "rss" -> "RSSを登録しました"
+                "website" -> "Web監視を登録しました"
+                else -> "連携を作成しました"
+            }) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (created.connection.provider == "rss") {
-                        Text("登録が完了しました。以下のボタンから記事取得をテストできます。")
+                    if (created.connection.provider in setOf("rss", "website")) {
+                        Text(if (created.connection.provider == "website")
+                            "登録完了。初回確認は現在のページを基準として保存し、通知しません。"
+                            else "登録が完了しました。以下のボタンから記事取得をテストできます。")
                         Text(created.connection.feedUrl, style = MaterialTheme.typography.bodySmall)
                         Text("間隔: ${created.connection.pollIntervalMinutes}分",
                             style = MaterialTheme.typography.bodySmall)
@@ -492,12 +509,16 @@ fun IntegrationsScreen(
                         enabled = created.token.isBlank() || tokenCopied,
                         onClick = {
                             testRequested = true
-                            if (created.connection.provider == "rss")
+                            if (created.connection.provider in setOf("rss", "website"))
                                 onRefreshFeed(created.connection.id)
                             else onTest(created.connection.id)
                         }
                     ) {
-                        Text(if (created.connection.provider == "rss") "今すぐ記事を取得" else "テスト通知を送信")
+                        Text(when (created.connection.provider) {
+                            "rss" -> "今すぐ記事を取得"
+                            "website" -> "今すぐ確認・基準を保存"
+                            else -> "テスト通知を送信"
+                        })
                     }
                     if (testRequested) {
                         Text(
@@ -526,7 +547,7 @@ private fun ConnectionEditorDialog(
     initial: IntegrationConnection?,
     onDismiss: () -> Unit,
     onDiscard: () -> Unit = onDismiss,
-    onSave: (String, String, String, Int, String, String, Int) -> Unit
+    onSave: (String, String, String, Int, String, String, Int, String) -> Unit
 ) {
     val context = LocalContext.current
     val savedDraft = remember(initial?.id) {
@@ -553,10 +574,13 @@ private fun ConnectionEditorDialog(
     var interval by rememberSaveable(initial?.id) {
         mutableStateOf(initial?.pollIntervalMinutes ?: savedDraft?.optInt("interval", 30) ?: 30)
     }
-    LaunchedEffect(initial?.id, provider, name, channel, minScore, keyword, feedUrl, interval) {
+    var cssSelector by rememberSaveable(initial?.id) {
+        mutableStateOf(initial?.cssSelector ?: savedDraft?.optString("cssSelector", "") ?: "")
+    }
+    LaunchedEffect(initial?.id, provider, name, channel, minScore, keyword, feedUrl, interval, cssSelector) {
         if (initial == null) {
             IntegrationDraftStore.save(context, provider, name, channel,
-                minScore.toInt(), keyword, feedUrl, interval)
+                minScore.toInt(), keyword, feedUrl, interval, cssSelector = cssSelector)
         }
     }
     AlertDialog(
@@ -566,7 +590,10 @@ private fun ConnectionEditorDialog(
             Column(Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (initial == null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         FilterChip(selected = provider == "webhook",
                             onClick = {
                                 provider = "webhook"; name = "新しい連携"; channel = "Webhook"
@@ -579,6 +606,10 @@ private fun ConnectionEditorDialog(
                             onClick = {
                                 provider = "rss"; name = "RSSニュース"; channel = "RSS"
                             }, label = { Text("RSS") })
+                        FilterChip(selected = provider == "website",
+                            onClick = {
+                                provider = "website"; name = "サイト更新"; channel = "Web更新"
+                            }, label = { Text("Web監視") })
                     }
                 }
                 if (initial == null) Text("入力内容は自動保存されます。閉じても次回再開できます。",
@@ -591,13 +622,26 @@ private fun ConnectionEditorDialog(
                     value = channel, onValueChange = { channel = it.take(60) },
                     label = { Text("通知チャンネル") }, singleLine = true
                 )
-                if (provider == "rss") {
+                if (provider in setOf("rss", "website")) {
                     OutlinedTextField(
                         value = feedUrl, onValueChange = { feedUrl = it.take(2048) },
-                        label = { Text("RSS / Atom URL（HTTPS）") },
-                        placeholder = { Text("https://example.com/feed.xml") },
+                        label = { Text(if (provider == "rss") "RSS / Atom URL（HTTPS）"
+                            else "監視するWebページURL（HTTPS）") },
+                        placeholder = { Text(if (provider == "rss")
+                            "https://example.com/feed.xml" else "https://example.com/news") },
                         singleLine = true
                     )
+                    if (provider == "website") {
+                        OutlinedTextField(
+                            value = cssSelector,
+                            onValueChange = { cssSelector = it.take(200) },
+                            label = { Text("監視する範囲（CSSセレクター・任意）") },
+                            placeholder = { Text("例: main, #news, .updates") },
+                            singleLine = true
+                        )
+                        Text("省略するとページ本文を監視。広告・時計などで誤通知が出る場合は、更新欄を指定してください。初回は通知しません。",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
                     Text("取得間隔: ${interval}分")
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(15, 30, 60).forEach { minutes ->
@@ -613,7 +657,7 @@ private fun ConnectionEditorDialog(
                                 label = { Text("${minutes / 60}時間") })
                         }
                     }
-                    Text("初回は最新3件、以降は新着記事のみ通知します。",
+                    if (provider == "rss") Text("初回は最新3件、以降は新着記事のみ通知します。",
                         style = MaterialTheme.typography.bodySmall)
                 } else {
                     Text("最低評価スコア: ${minScore.toInt()}（0 = 無制限）")
@@ -628,16 +672,20 @@ private fun ConnectionEditorDialog(
                     "キーワードがある場合、記事のタイトルまたは概要に一致するものだけ通知します。",
                     style = MaterialTheme.typography.bodySmall
                 )
+                if (provider == "website") Text(
+                    "キーワードを指定すると、更新後の監視範囲にその文字列がある場合のみ通知します。",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         },
         confirmButton = {
             Button(
                 enabled = name.isNotBlank() && channel.isNotBlank() &&
-                    (provider != "rss" || feedUrl.trim().startsWith("https://")),
+                    (provider !in setOf("rss", "website") || feedUrl.trim().startsWith("https://")),
                 onClick = {
                     onSave(name, provider, channel,
-                        if (provider == "rss") 0 else minScore.toInt(),
-                        keyword, feedUrl, interval)
+                        if (provider in setOf("rss", "website")) 0 else minScore.toInt(),
+                        keyword, feedUrl, interval, cssSelector)
                 }
             ) { Text(if (initial == null) "作成" else "保存") }
         },
@@ -665,6 +713,7 @@ internal object IntegrationDraftStore {
 
     fun save(context: Context, provider: String, name: String, channel: String,
              minScore: Int, keyword: String, feedUrl: String, interval: Int,
+             cssSelector: String = "",
              templateKey: String = "webhook", wizardStep: Int = 0) {
         val json = JSONObject()
             .put("provider", provider)
@@ -673,6 +722,7 @@ internal object IntegrationDraftStore {
             .put("minScore", minScore)
             .put("keyword", keyword)
             .put("feedUrl", feedUrl)
+            .put("cssSelector", cssSelector)
             .put("interval", interval)
             .put("templateKey", templateKey)
             .put("wizardStep", wizardStep)

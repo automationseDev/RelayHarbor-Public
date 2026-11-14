@@ -1,4 +1,4 @@
-# RelayHarbor Relay (v0.4)
+# RelayHarbor Relay (v0.6.0)
 
 **Recommended GHCR image deployment:** [Container delivery guide](../docs/container-delivery.md). GHCR image publishing is done by GitHub Actions; NAS deployment is opt-in. The original build-based `compose.yaml` remains supported for development.
 
@@ -76,6 +76,12 @@ Then: PYTHONPATH=. pytest -q test_server.py
 - Inbound Webhooks with a dedicated Bearer token now also accept Slack Incoming
   Webhook `blocks` JSON and turn it into a RelayHarbor rich card.
   See [Lancers AI Scout migration](../docs/lancers-ai-scout-relay.md).
+
+## v0.6 — Webサイト更新監視（RSS不要）
+
+Android「連携」→「＋ ガイド付きで追加」→「Webサイト更新監視」。公開HTTPSページの静的HTML本文（任意のCSSセレクターで範囲指定）を15分〜24時間間隔で比較します。初回は基準保存のみ、以降の変更で元URL付きリッチカードを指定チャンネルへ送信します。認証トークンは不要です。詳しくは [Web更新監視ガイド](../docs/website-change-monitor.md) を参照してください。
+
+利用にはRelayサーバー v0.6.0以上への更新が必要です。GHCRイメージの公開後、NAS/VPS側で更新してください。JavaScript描画・ログイン必須サイトには非対応で、監視対象のサイト規約を守ってください。
 
 ## v0.5 — RSS/Atom subscriptions
 

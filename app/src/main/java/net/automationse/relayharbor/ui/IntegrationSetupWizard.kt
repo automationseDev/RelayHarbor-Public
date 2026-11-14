@@ -68,6 +68,11 @@ internal val integrationWizardPresets = listOf(
         "公開HTTPSフィードのURLを設定します。初回は最新3件、以降は新着記事を取り込みます。"
     ),
     IntegrationWizardPreset(
+        "website", "Webサイト更新監視", "RSSなしの公開サイトを定期チェックして更新を通知",
+        "website", "Webサイト更新", "Web更新",
+        "公開HTTPSページを監視します。初回は基準を保存するだけで通知しません。変更時のみカードで通知します。JS描画・ログイン必須ページには未対応です。"
+    ),
+    IntegrationWizardPreset(
         "github", "GitHub Actions", "Actionsのワークフローから通知する",
         "github_actions", "GitHub Actions", "GitHub",
         "ネイティブのGitHub App連携ではありません。Actions側のHTTP POST処理に発行された専用URLとBearerトークンを設定します。"
@@ -106,9 +111,12 @@ internal object IntegrationWizardRules {
     }
 
     fun validForReview(
-        name: String, channel: String, provider: String, feedUrl: String
+        name: String, channel: String, provider: String, feedUrl: String,
+        cssSelector: String = ""
     ): Boolean = validBasics(name, channel) &&
-        (provider != "rss" || validRssUrl(feedUrl))
+        (provider !in setOf("rss", "website") || validRssUrl(feedUrl)) &&
+        (provider != "website" || cssSelector.length <= 200 &&
+            cssSelector.none { it.code < 32 || it.code == 127 })
 }
 
 /** Four-step guided setup; saved drafts contain no access credentials. */
@@ -117,13 +125,14 @@ internal fun IntegrationSetupWizard(
     status: String,
     onDismiss: () -> Unit,
     onDiscard: () -> Unit,
-    onCreate: (String, String, String, Int, String, String, Int) -> Unit
+    onCreate: (String, String, String, Int, String, String, Int, String) -> Unit
 ) {
     val context = LocalContext.current
     val draft = remember { IntegrationDraftStore.load(context) }
     val savedKey = draft?.optString("templateKey").orEmpty()
     val fallbackKey = when (draft?.optString("provider")) {
         "rss" -> "rss"
+        "website" -> "website"
         "github_actions" -> "github"
         else -> "webhook"
     }
@@ -154,16 +163,19 @@ internal fun IntegrationSetupWizard(
     var interval by rememberSaveable {
         mutableStateOf((draft?.optInt("interval") ?: 30).coerceIn(15, 1440))
     }
+    var cssSelector by rememberSaveable {
+        mutableStateOf(draft?.optString("cssSelector", "").orEmpty())
+    }
     var submitting by rememberSaveable { mutableStateOf(false) }
     val preset = integrationWizardPresets.first { it.key == templateKey }
     val canAdvance = IntegrationWizardRules.validForReview(
-        name, channel, preset.provider, feedUrl
+        name, channel, preset.provider, feedUrl, cssSelector
     )
 
-    LaunchedEffect(templateKey, step, name, channel, minScore, keyword, feedUrl, interval) {
+    LaunchedEffect(templateKey, step, name, channel, minScore, keyword, feedUrl, interval, cssSelector) {
         IntegrationDraftStore.save(
             context, preset.provider, name, channel, minScore, keyword, feedUrl, interval,
-            templateKey = templateKey, wizardStep = step
+            cssSelector = cssSelector, templateKey = templateKey, wizardStep = step
         )
     }
     LaunchedEffect(status) {
@@ -202,7 +214,7 @@ internal fun IntegrationSetupWizard(
                                 templateKey = option.key
                                 name = option.suggestedName
                                 channel = option.suggestedChannel
-                                if (option.provider == "rss") minScore = 0
+                                if (option.provider in setOf("rss", "website")) minScore = 0
                             }
                             Card(
                                 modifier = Modifier.fillMaxWidth().clickable(onClick = selectPreset),
@@ -233,7 +245,7 @@ internal fun IntegrationSetupWizard(
                                         ) {
                                             Icon(
                                                 imageVector = when (option.key) {
-                                                    "rss" -> Icons.Default.RssFeed
+                                                    "rss", "website" -> Icons.Default.RssFeed
                                                     "github" -> Icons.Default.Code
                                                     "dify" -> Icons.Default.AutoAwesome
                                                     "n8n" -> Icons.Default.Hub
@@ -254,7 +266,7 @@ internal fun IntegrationSetupWizard(
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        if (option.provider != "rss") Text(
+                                        if (option.provider !in setOf("rss", "website")) Text(
                                             "Webhook形式",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.primary
@@ -287,20 +299,35 @@ internal fun IntegrationSetupWizard(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        if (preset.provider == "rss") {
+                        if (preset.provider in setOf("rss", "website")) {
                             OutlinedTextField(
                                 value = feedUrl,
                                 onValueChange = { feedUrl = it.take(2048) },
-                                label = { Text("RSS / Atom URL（HTTPS）") },
-                                placeholder = { Text("https://example.com/feed.xml") },
+                                label = { Text(if (preset.provider == "rss")
+                                    "RSS / Atom URL（HTTPS）" else "監視するWebページURL（HTTPS）") },
+                                placeholder = { Text(if (preset.provider == "rss")
+                                    "https://example.com/feed.xml" else "https://example.com/news") },
                                 isError = feedUrl.isNotBlank() &&
                                     !IntegrationWizardRules.validRssUrl(feedUrl),
                                 supportingText = {
-                                    Text("公開HTTPSフィードのURLを入力してください。LAN内のURLやHTTPは利用できません。")
+                                    Text("公開HTTPSサイトのURLを入力してください。LAN内のURLやHTTPは利用できません。")
                                 },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
+                            if (preset.provider == "website") {
+                                OutlinedTextField(
+                                    value = cssSelector,
+                                    onValueChange = { cssSelector = it.take(200) },
+                                    label = { Text("監視する部分（CSSセレクター・任意）") },
+                                    placeholder = { Text("例: main, #news, .updates") },
+                                    supportingText = {
+                                        Text("未指定なら本文全体。広告などの変化を除くには更新欄を指定します。")
+                                    },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         } else {
                             Text(
                                 "専用Webhook URLとトークンは登録後に発行されます。ここでトークンを入力する必要はありません。",
@@ -315,8 +342,9 @@ internal fun IntegrationSetupWizard(
                     }
                     2 -> {
                         Text("通知の条件を指定", fontWeight = FontWeight.SemiBold)
-                        if (preset.provider == "rss") {
-                            Text("RSSの取得間隔: " + interval + "分")
+                        if (preset.provider in setOf("rss", "website")) {
+                            Text(if (preset.provider == "rss") "RSSの取得間隔: " + interval + "分"
+                                else "Webページの確認間隔: " + interval + "分")
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 listOf(listOf(15, 30, 60), listOf(180, 360, 720), listOf(1440))
                                     .forEach { choices ->
@@ -365,8 +393,10 @@ internal fun IntegrationSetupWizard(
                         Text("種類: " + preset.title)
                         Text("連携名: " + name.trim())
                         Text("通知先: #" + channel.trim())
-                        if (preset.provider == "rss") {
-                            Text("フィード: " + feedUrl.trim())
+                        if (preset.provider in setOf("rss", "website")) {
+                            Text("監視URL: " + feedUrl.trim())
+                            if (preset.provider == "website")
+                                Text("監視範囲: " + cssSelector.ifBlank { "本文全体" })
                             Text("取得間隔: " + interval + "分")
                         } else {
                             Text("最低評価スコア: " + minScore)
@@ -374,7 +404,7 @@ internal fun IntegrationSetupWizard(
                         Text("キーワード: " + keyword.trim().ifBlank { "指定なし" })
                         Text("登録後の設定", fontWeight = FontWeight.SemiBold)
                         Text(preset.setupGuide, style = MaterialTheme.typography.bodySmall)
-                        if (preset.provider != "rss") {
+                        if (preset.provider !in setOf("rss", "website")) {
                             Text(
                                 "URLとトークンは作成後に一度だけ表示されます。両方を送信側に設定し、テスト通知で確認します。",
                                 style = MaterialTheme.typography.bodySmall,
@@ -403,9 +433,10 @@ internal fun IntegrationSetupWizard(
                         submitting = true
                         onCreate(
                             name.trim(), preset.provider, channel.trim(),
-                            if (preset.provider == "rss") 0 else minScore,
-                            keyword.trim(), if (preset.provider == "rss") feedUrl.trim() else "",
-                            interval
+                            if (preset.provider in setOf("rss", "website")) 0 else minScore,
+                            keyword.trim(), if (preset.provider in setOf("rss", "website"))
+                                feedUrl.trim() else "",
+                            interval, if (preset.provider == "website") cssSelector.trim() else ""
                         )
                     }
                 }
