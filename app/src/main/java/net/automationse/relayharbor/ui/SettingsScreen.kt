@@ -62,7 +62,9 @@ fun SettingsScreen(
     showHomeActivity: Boolean,
     onShowHomeActivityChange: (Boolean) -> Unit,
     showHomeChannels: Boolean,
-    onShowHomeChannelsChange: (Boolean) -> Unit
+    onShowHomeChannelsChange: (Boolean) -> Unit,
+    showHomeHeader: Boolean,
+    onShowHomeHeaderChange: (Boolean) -> Unit
 ) {
     var mode by remember(settings.mode) { mutableStateOf(settings.mode) }
     var endpoint by remember(settings.endpoint) { mutableStateOf(settings.endpoint) }
@@ -271,6 +273,25 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = resumeLastPage, onCheckedChange = onResumeLastPageChange)
+                    }
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("ホーム画面のRelayHarborヘッダーを表示")
+                            Text(
+                                "オフにすると最上部のタイトルバーを隠し、カードの表示領域を広げます。ホームからも戻せます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = showHomeHeader,
+                            onCheckedChange = onShowHomeHeaderChange
+                        )
                     }
                     HorizontalDivider()
                     Row(

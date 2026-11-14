@@ -2,40 +2,39 @@ package net.automationse.relayharbor.ui
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -60,333 +59,358 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 
-/** A safe, user-controlled grid of built-in Home panels. No third-party code execution. */
+/**
+ * Small, content-height based dashboard. Maintains original saved order and spans.
+ * The grid itself uses a skyline rather than a rigid row: tall cards do not leave
+ * empty spaces under shorter neighbors.
+ */
 @Composable
 internal fun CustomHomeDashboard(
     profile: String,
     layout: List<HomePanel>,
+    showHeader: Boolean,
+    onShowHeaderChange: (Boolean) -> Unit,
     onLayoutChange: (List<HomePanel>) -> Unit,
     onReset: () -> Unit,
     panelContent: @Composable (String) -> Unit
 ) {
     val columns = HomePanelLayout.columns(profile)
-    var editMode by rememberSaveable { mutableStateOf(false) }
-    var showPanelPicker by rememberSaveable { mutableStateOf(false) }
-    var resetConfirm by rememberSaveable { mutableStateOf(false) }
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var pickerOpen by rememberSaveable { mutableStateOf(false) }
+    var resetOpen by rememberSaveable { mutableStateOf(false) }
     val positions = remember(profile) { mutableMapOf<String, Rect>() }
-    val density = LocalDensity.current
     var activeDragId by remember(profile) { mutableStateOf<String?>(null) }
-    var hoverTarget by remember(profile) { mutableStateOf<String?>(null) }
-    val liveLayout by rememberUpdatedState(layout)
-    val packedLayout = remember(profile, layout) {
-        HomePanelLayout.packedVisible(profile, layout)
-    }
-    val livePackedLayout by rememberUpdatedState(packedLayout)
-    // Controls apply only to the current cover/expanded layout, not both.
-    val updateLayout by rememberUpdatedState(onLayoutChange)
+    var targetId by remember(profile) { mutableStateOf<String?>(null) }
+    val activeLayout by rememberUpdatedState(layout)
+    val emitLayout by rememberUpdatedState(onLayoutChange)
+    val visible = layout.filter { it.visible }
 
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(columns),
-        modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item(span = { GridItemSpan(columns) }) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("マイホーム", style = MaterialTheme.typography.titleLarge)
-                    Text(
-                        if (profile == HomePanelLayout.EXPANDED)
-                            "広い画面用レイアウト" else "コンパクト画面用レイアウト",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                TextButton(onClick = { editMode = !editMode }) {
-                    Icon(
-                        if (editMode) Icons.Default.Check else Icons.Default.Edit,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(if (editMode) "編集完了" else "カスタマイズ")
-                }
-            }
-        }
-        if (editMode) {
-            item(span = { GridItemSpan(columns) }) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        "上の取っ手を長押しして移動先までドラッグします。移動先が強調されたら指を離してください。幅・高さは − / ＋ でも変更できます。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { showPanelPicker = true }) {
-                            Icon(Icons.Default.Add, contentDescription = null)
-                            Text("表示カードを選択")
-                        }
-                        TextButton(onClick = { resetConfirm = true }) {
-                            Text("このレイアウトを初期化")
-                        }
-                    }
-                }
-            }
-        }
-        items(packedLayout, key = { it.id }, span = { GridItemSpan(it.span) }) { panel ->
-            DisposableEffect(profile, panel.id) {
-                onDispose { positions.remove(panel.id) }
-            }
-            var drag by remember(panel.id) { mutableStateOf(Offset.Zero) }
-            var dragOrigin by remember(panel.id) { mutableStateOf(Offset.Zero) }
-            var dragging by remember(panel.id) { mutableStateOf(false) }
-            var resizeDrag by remember(panel.id) { mutableStateOf(Offset.Zero) }
-            val unitWidthPx = with(density) {
-                (if (profile == HomePanelLayout.EXPANDED) 90.dp else 170.dp).toPx()
-            }
-            val unitHeightPx = with(density) { 92.dp.toPx() }
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .animateContentSize()
-                    .onGloballyPositioned { positions[panel.id] = it.boundsInRoot() }
-                    .zIndex(if (dragging) 2f else 0f)
-                    .graphicsLayer {
-                        translationX = drag.x
-                        translationY = drag.y
-                    },
-                shape = MaterialTheme.shapes.medium,
-                border = if (editMode) BorderStroke(
-                    if (hoverTarget == panel.id && activeDragId != panel.id) 3.dp else 1.dp,
-                    if (hoverTarget == panel.id && activeDragId != panel.id)
-                        MaterialTheme.colorScheme.tertiary
-                    else MaterialTheme.colorScheme.primary
-                ) else null,
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                )
-            ) {
-                Column(Modifier.fillMaxWidth()) {
-                    if (editMode) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().pointerInput(
-                                profile, panel.id, editMode
-                            ) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = {
-                                        dragging = true
-                                        activeDragId = panel.id
-                                        hoverTarget = null
-                                        dragOrigin = positions[panel.id]?.center ?: Offset.Zero
-                                        drag = Offset.Zero
-                                    },
-                                    onDrag = { change, amount ->
-                                        change.consume()
-                                        drag += amount
-                                        val center = dragOrigin + drag
-                                        hoverTarget = positions.entries.firstOrNull {
-                                            it.key != panel.id &&
-                                                liveLayout.any { visiblePanel ->
-                                                    visiblePanel.id == it.key && visiblePanel.visible
-                                                } &&
-                                                it.value.contains(center)
-                                        }?.key
-                                    },
-                                    onDragEnd = {
-                                        hoverTarget?.let { target ->
-                                            updateLayout(
-                                                HomePanelLayout.move(profile, livePackedLayout, panel.id, target)
-                                            )
-                                        }
-                                        dragging = false
-                                        activeDragId = null
-                                        hoverTarget = null
-                                        drag = Offset.Zero
-                                    },
-                                    onDragCancel = {
-                                        dragging = false
-                                        activeDragId = null
-                                        hoverTarget = null
-                                        drag = Offset.Zero
-                                    }
-                                )
-                            }.padding(start = 8.dp, top = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.DragIndicator, contentDescription = "長押しして移動")
-                            Text(
-                                if (hoverTarget == panel.id && activeDragId != panel.id)
-                                    "ここに移動"
-                                else HomePanelLayout.titles[panel.id].orEmpty(),
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(
-                                onClick = {
-                                    updateLayout(
-                                        HomePanelLayout.visibility(profile, layout, panel.id, false)
-                                    )
-                                },
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = "カードを非表示")
-                            }
-                        }
-                    }
-                    Box(
-                        Modifier.fillMaxWidth()
-                            .heightIn(max = (110 + panel.height * 110).dp)
-                            .verticalScroll(rememberScrollState())
-                            .padding(8.dp)
-                    ) {
-                        panelContent(panel.id)
-                    }
-                    if (editMode) {
-                        val visibleIds = livePackedLayout.map { it.id }
-                        val index = visibleIds.indexOf(panel.id)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            TextButton(
-                                enabled = index > 0,
-                                onClick = {
-                                    if (index > 0) updateLayout(
-                                        HomePanelLayout.move(
-                                            profile, livePackedLayout, panel.id, visibleIds[index - 1]
-                                        )
-                                    )
-                                }
-                            ) { Text("前に移動") }
-                            TextButton(
-                                enabled = index in 0 until visibleIds.lastIndex,
-                                onClick = {
-                                    if (index in 0 until visibleIds.lastIndex) updateLayout(
-                                        HomePanelLayout.move(
-                                            profile, livePackedLayout, panel.id, visibleIds[index + 1]
-                                        )
-                                    )
-                                }
-                            ) { Text("後ろに移動") }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Text("幅", style = MaterialTheme.typography.labelSmall)
-                            IconButton(
-                                onClick = {
-                                    updateLayout(HomePanelLayout.resize(profile, layout, panel.id, -1, 0))
-                                },
-                                enabled = panel.span > 1,
-                                modifier = Modifier.size(32.dp)
-                            ) { Icon(Icons.Default.Remove, contentDescription = "幅を縮小") }
-                            Text(panel.span.toString() + "/" + columns,
-                                style = MaterialTheme.typography.labelSmall)
-                            IconButton(
-                                onClick = {
-                                    updateLayout(HomePanelLayout.resize(profile, layout, panel.id, 1, 0))
-                                },
-                                enabled = panel.span < columns,
-                                modifier = Modifier.size(32.dp)
-                            ) { Icon(Icons.Default.Add, contentDescription = "幅を拡大") }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Text("高さ", style = MaterialTheme.typography.labelSmall)
-                            IconButton(
-                                onClick = {
-                                    updateLayout(HomePanelLayout.resize(profile, layout, panel.id, 0, -1))
-                                },
-                                enabled = panel.height > 1,
-                                modifier = Modifier.size(32.dp)
-                            ) { Icon(Icons.Default.Remove, contentDescription = "高さを縮小") }
-                            Text(panel.height.toString() + "/6",
-                                style = MaterialTheme.typography.labelSmall)
-                            IconButton(
-                                onClick = {
-                                    updateLayout(HomePanelLayout.resize(profile, layout, panel.id, 0, 1))
-                                },
-                                enabled = panel.height < 6,
-                                modifier = Modifier.size(32.dp)
-                            ) { Icon(Icons.Default.Add, contentDescription = "高さを拡大") }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(end = 12.dp, bottom = 6.dp),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            Text(
-                                "↘ サイズ変更",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.pointerInput(profile, panel.id) {
-                                    detectDragGestures(
-                                        onDragStart = { resizeDrag = Offset.Zero },
-                                        onDrag = { change, delta ->
-                                            change.consume()
-                                            resizeDrag += delta
-                                        },
-                                        onDragEnd = {
-                                            val widthDelta = (resizeDrag.x / unitWidthPx).roundToInt()
-                                            val heightDelta = (resizeDrag.y / unitHeightPx).roundToInt()
-                                            if (widthDelta != 0 || heightDelta != 0) {
-                                                updateLayout(
-                                                    HomePanelLayout.resize(
-                                                        profile, layout, panel.id,
-                                                        widthDelta, heightDelta
-                                                    )
-                                                )
-                                            }
-                                            resizeDrag = Offset.Zero
-                                        },
-                                        onDragCancel = { resizeDrag = Offset.Zero }
-                                    )
-                                }.padding(6.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        if (layout.none { it.visible }) {
-            item(span = { GridItemSpan(columns) }) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("マイホーム", style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    "表示するカードがありません。「カスタマイズ」→「表示カードを選択」から復元できます。",
-                    modifier = Modifier.padding(16.dp),
+                    if (profile == HomePanelLayout.EXPANDED)
+                        "広い画面用の配置" else "コンパクト画面用の配置",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            TextButton(onClick = { editing = !editing }) {
+                Icon(
+                    if (editing) Icons.Default.Check else Icons.Default.Edit,
+                    contentDescription = null, modifier = Modifier.size(18.dp)
+                )
+                Text(if (editing) "編集完了" else "カスタマイズ")
+            }
+        }
+        if (editing) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("RelayHarborの上部ヘッダー", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "オフでタイトルバーを隠し、表示領域を拡大",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        Switch(checked = showHeader, onCheckedChange = onShowHeaderChange)
+                    }
+                    HorizontalDivider()
+                    Text(
+                        "取っ手を長押しして移動。各カードの︙でサイズ・順序・表示を編集できます。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        TextButton(onClick = { pickerOpen = true }) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Text("カードの表示")
+                        }
+                        TextButton(onClick = { resetOpen = true }) {
+                            Text("配置を初期化")
+                        }
+                    }
+                }
+            }
+        }
+        if (visible.isEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow
+            ) {
+                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    Text("表示するカードがありません", style = MaterialTheme.typography.titleSmall)
+                    TextButton(onClick = { pickerOpen = true }) {
+                        Text("カードを選択する")
+                    }
+                }
+            }
+        } else {
+            HomeMasonryGrid(columns = columns, panels = visible) { panel ->
+                val currentLayout by rememberUpdatedState(activeLayout)
+                var dragging by remember(panel.id) { mutableStateOf(false) }
+                var displacement by remember(panel.id) { mutableStateOf(Offset.Zero) }
+                var origin by remember(panel.id) { mutableStateOf(Offset.Zero) }
+                val density = LocalDensity.current
+                val cellWidth = with(density) {
+                    (if (profile == HomePanelLayout.EXPANDED) 90.dp else 175.dp).toPx()
+                }
+                val cellHeight = with(density) { 110.dp.toPx() }
+                var resizeDistance by remember(panel.id) { mutableStateOf(Offset.Zero) }
+                var cardMenu by remember(panel.id) { mutableStateOf(false) }
+                val visibleIds = currentLayout.filter { it.visible }.map { it.id }
+                val panelIndex = visibleIds.indexOf(panel.id)
+
+                DisposableEffect(profile, panel.id) {
+                    onDispose { positions.remove(panel.id) }
+                }
+                Card(
+                    modifier = Modifier.fillMaxWidth().animateContentSize()
+                        .onGloballyPositioned {
+                            if (!dragging) positions[panel.id] = it.boundsInRoot()
+                        }
+                        .zIndex(if (dragging) 3f else 0f)
+                        .graphicsLayer {
+                            translationX = displacement.x
+                            translationY = displacement.y
+                        },
+                    shape = RoundedCornerShape(18.dp),
+                    border = if (editing) BorderStroke(
+                        if (targetId == panel.id) 3.dp else 1.dp,
+                        if (targetId == panel.id) MaterialTheme.colorScheme.tertiary
+                        else MaterialTheme.colorScheme.primary
+                    ) else null,
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    )
+                ) {
+                    Column(Modifier.fillMaxWidth()) {
+                        if (editing) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f)
+                                        .pointerInput(profile, panel.id) {
+                                            detectDragGesturesAfterLongPress(
+                                                onDragStart = {
+                                                    dragging = true
+                                                    activeDragId = panel.id
+                                                    targetId = null
+                                                    origin = positions[panel.id]?.center ?: Offset.Zero
+                                                    displacement = Offset.Zero
+                                                },
+                                                onDrag = { change, delta ->
+                                                    change.consume()
+                                                    displacement += delta
+                                                    val point = origin + displacement
+                                                    targetId = positions.entries.firstOrNull {
+                                                        it.key != panel.id &&
+                                                            currentLayout.any { current ->
+                                                                current.id == it.key && current.visible
+                                                            } && it.value.contains(point)
+                                                    }?.key
+                                                },
+                                                onDragEnd = {
+                                                    targetId?.let { target ->
+                                                        emitLayout(
+                                                            HomePanelLayout.move(
+                                                                profile, currentLayout, panel.id, target
+                                                            )
+                                                        )
+                                                    }
+                                                    displacement = Offset.Zero
+                                                    dragging = false
+                                                    activeDragId = null
+                                                    targetId = null
+                                                },
+                                                onDragCancel = {
+                                                    displacement = Offset.Zero
+                                                    dragging = false
+                                                    activeDragId = null
+                                                    targetId = null
+                                                }
+                                            )
+                                        }
+                                        .padding(vertical = 11.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.DragIndicator,
+                                        contentDescription = "長押ししてカードを移動",
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                    Text(
+                                        if (targetId == panel.id && activeDragId != panel.id)
+                                            "ここに移動"
+                                        else HomePanelLayout.titles[panel.id].orEmpty(),
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                                Box {
+                                    IconButton(onClick = { cardMenu = true }) {
+                                        Icon(Icons.Default.MoreVert, contentDescription = "カードの編集メニュー")
+                                    }
+                                    DropdownMenu(
+                                        expanded = cardMenu,
+                                        onDismissRequest = { cardMenu = false }
+                                    ) {
+                                        fun change(newLayout: List<HomePanel>) {
+                                            emitLayout(newLayout)
+                                            cardMenu = false
+                                        }
+                                        DropdownMenuItem(
+                                            text = { Text("前へ移動") },
+                                            enabled = panelIndex > 0,
+                                            onClick = {
+                                                if (panelIndex > 0) change(
+                                                    HomePanelLayout.move(
+                                                        profile, currentLayout,
+                                                        panel.id, visibleIds[panelIndex - 1]
+                                                    )
+                                                )
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("後ろへ移動") },
+                                            enabled = panelIndex in 0 until visibleIds.lastIndex,
+                                            onClick = {
+                                                if (panelIndex in 0 until visibleIds.lastIndex) change(
+                                                    HomePanelLayout.move(
+                                                        profile, currentLayout,
+                                                        panel.id, visibleIds[panelIndex + 1]
+                                                    )
+                                                )
+                                            }
+                                        )
+                                        listOf(
+                                            "幅を縮小" to (-1 to 0),
+                                            "幅を拡大" to (1 to 0),
+                                            "高さを縮小" to (0 to -1),
+                                            "高さを拡大" to (0 to 1)
+                                        ).forEach { (label, step) ->
+                                            DropdownMenuItem(
+                                                text = { Text(label) },
+                                                enabled = when (label) {
+                                                    "幅を縮小" -> panel.span > 1
+                                                    "幅を拡大" -> panel.span < columns
+                                                    "高さを縮小" -> panel.height > 1
+                                                    else -> panel.height < 6
+                                                },
+                                                onClick = {
+                                                    change(
+                                                        HomePanelLayout.resize(
+                                                            profile, currentLayout, panel.id,
+                                                            step.first, step.second
+                                                        )
+                                                    )
+                                                }
+                                            )
+                                        }
+                                        HorizontalDivider()
+                                        DropdownMenuItem(
+                                            text = { Text("カードを非表示") },
+                                            onClick = {
+                                                change(HomePanelLayout.visibility(
+                                                    profile, currentLayout, panel.id, false
+                                                ))
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Box(
+                            modifier = Modifier.fillMaxWidth()
+                                .heightIn(max = (110 + panel.height * 110).dp)
+                                .verticalScroll(rememberScrollState())
+                                .padding(12.dp)
+                        ) {
+                            panelContent(panel.id)
+                        }
+                        if (editing) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(end = 8.dp, bottom = 3.dp),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Text(
+                                    "↘ サイズ調整",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.pointerInput(profile, panel.id) {
+                                        detectDragGestures(
+                                            onDragStart = { resizeDistance = Offset.Zero },
+                                            onDrag = { change, delta ->
+                                                change.consume()
+                                                resizeDistance += delta
+                                            },
+                                            onDragEnd = {
+                                                val widthStep = (resizeDistance.x / cellWidth).roundToInt()
+                                                val heightStep = (resizeDistance.y / cellHeight).roundToInt()
+                                                if (widthStep != 0 || heightStep != 0) {
+                                                    emitLayout(HomePanelLayout.resize(
+                                                        profile, currentLayout, panel.id,
+                                                        widthStep, heightStep
+                                                    ))
+                                                }
+                                                resizeDistance = Offset.Zero
+                                            },
+                                            onDragCancel = { resizeDistance = Offset.Zero }
+                                        )
+                                    }.padding(9.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
-    if (showPanelPicker) {
+    if (pickerOpen) {
         AlertDialog(
-            onDismissRequest = { showPanelPicker = false },
-            title = { Text("ホームに表示するカード") },
+            onDismissRequest = { pickerOpen = false },
+            title = { Text("表示するカード") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     layout.forEach { panel ->
                         Row(
                             Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(HomePanelLayout.titles[panel.id].orEmpty())
+                            Text(
+                                HomePanelLayout.titles[panel.id].orEmpty(),
+                                modifier = Modifier.weight(1f)
+                            )
                             Switch(
                                 checked = panel.visible,
                                 onCheckedChange = { visible ->
-                                    updateLayout(
-                                        HomePanelLayout.visibility(profile, layout, panel.id, visible)
-                                    )
+                                    emitLayout(HomePanelLayout.visibility(
+                                        profile, layout, panel.id, visible
+                                    ))
                                 }
                             )
                         }
@@ -394,25 +418,22 @@ internal fun CustomHomeDashboard(
                 }
             },
             confirmButton = {
-                Button(onClick = { showPanelPicker = false }) { Text("完了") }
+                Button(onClick = { pickerOpen = false }) { Text("完了") }
             }
         )
     }
-    if (resetConfirm) {
+    if (resetOpen) {
         AlertDialog(
-            onDismissRequest = { resetConfirm = false },
-            title = { Text("現在のレイアウトを初期化しますか？") },
+            onDismissRequest = { resetOpen = false },
+            title = { Text("この画面の配置を初期化しますか？") },
             text = {
-                Text("この画面幅のカード配置だけをリセットします。連携設定やチャット履歴は削除しません。")
+                Text("カード配置だけを初期状態に戻します。連携設定やチャット履歴は維持します。")
             },
             confirmButton = {
-                Button(onClick = {
-                    resetConfirm = false
-                    onReset()
-                }) { Text("初期化") }
+                Button(onClick = { resetOpen = false; onReset() }) { Text("初期化") }
             },
             dismissButton = {
-                TextButton(onClick = { resetConfirm = false }) { Text("キャンセル") }
+                TextButton(onClick = { resetOpen = false }) { Text("キャンセル") }
             }
         )
     }
