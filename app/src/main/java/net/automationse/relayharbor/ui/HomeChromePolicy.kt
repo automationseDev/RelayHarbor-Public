@@ -14,6 +14,11 @@ internal object HomePanelHeaders {
         "sync" -> HomePanelHeaderSpec("同期・通知")
         "activity" -> HomePanelHeaderSpec("最近のアクティビティ", "すべて見る")
         "channels" -> HomePanelHeaderSpec("チャンネル", "一覧へ")
+        "clock" -> HomePanelHeaderSpec("時計")
+        "date" -> HomePanelHeaderSpec("今日の日付")
+        "weather" -> HomePanelHeaderSpec("天気")
+        "agenda" -> HomePanelHeaderSpec("次の予定")
+        "battery" -> HomePanelHeaderSpec("バッテリー")
         else -> HomePanelHeaderSpec("ホーム")
     }
 }
