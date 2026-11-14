@@ -3,7 +3,6 @@ package net.automationse.relayharbor.integration
 import android.content.Context
 import org.json.JSONObject
 import java.net.URI
-import java.time.Instant
 import java.util.UUID
 
 /** Private per-device source settings; never requires a Relay server or stores credentials. */
@@ -59,6 +58,13 @@ object LocalWebsiteRules {
         }
         require(keyword.length <= 100 && keyword.none { it.code < 32 || it.code == 127 }) {
             "キーワードは100文字以内で指定してください"
+        }
+        if (selector.isNotBlank()) {
+            try {
+                org.jsoup.Jsoup.parse("<html><body></body></html>").select(selector.trim())
+            } catch (_: Exception) {
+                throw IllegalArgumentException("CSSセレクターの書式が正しくありません")
+            }
         }
     }
 }
