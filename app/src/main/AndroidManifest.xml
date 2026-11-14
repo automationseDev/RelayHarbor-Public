@@ -60,6 +60,7 @@
             android:name=".floating.ScreenCaptureRequestActivity"
             android:exported="false"
             android:excludeFromRecents="true"
+            android:taskAffinity="net.automationse.relayharbor.capture"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <provider
             android:name="androidx.core.content.FileProvider"
