@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
 import net.automationse.relayharbor.data.ChannelEntity
+import net.automationse.relayharbor.data.ChannelOrganizationStore
 import net.automationse.relayharbor.data.ChannelSummary
 import net.automationse.relayharbor.data.MessageEntity
 import net.automationse.relayharbor.data.NotificationAction
@@ -97,6 +98,7 @@ import net.automationse.relayharbor.data.NotificationCenterRules
 import net.automationse.relayharbor.data.CardCodec
 import net.automationse.relayharbor.notification.NotificationOpenRequests
 import net.automationse.relayharbor.notification.NotificationPreferences
+import net.automationse.relayharbor.notification.NotificationPriorityPolicy
 import net.automationse.relayharbor.notification.MessageNotifications
 import net.automationse.relayharbor.notification.VisibleChat
 
@@ -133,6 +135,13 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     var channelQuery by rememberSaveable { mutableStateOf(uiStore.channelSearch()) }
     var channelFilter by rememberSaveable { mutableStateOf(uiStore.channelListFilter()) }
     val channels by vm.channels.collectAsState()
+    val organization = remember(context) { ChannelOrganizationStore(context) }
+    var organizationRevision by remember { mutableStateOf(0) }
+    val displayChannels = remember(channels, organizationRevision) {
+        channels.map(organization::present)
+    }
+    val globalMessageResults by vm.messageSearchResults.collectAsState()
+    val globalMessageSearching by vm.messageSearchBusy.collectAsState()
     val summaries by vm.channelSummaries.collectAsState()
     val activity by vm.activity.collectAsState()
     val selectedId by vm.selectedChannelId.collectAsState()
@@ -324,7 +333,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
             pageStates.SaveableStateProvider(page) {
             when (page) {
                 "home" -> HomeScreen(
-                    channels = channels,
+                    channels = displayChannels,
                     summaries = summaryById,
                     activity = activity,
                     onOpen = ::openChannel,
@@ -363,7 +372,13 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         Row(Modifier.fillMaxSize()) {
                             Box(Modifier.weight(0.36f).fillMaxSize()) {
                     ChannelListScreen(
-                        channels = channels,
+                        channels = displayChannels,
+                        organization = organization,
+                        organizationRevision = organizationRevision,
+                        onOrganizationChanged = { organizationRevision++ },
+                        searchResults = globalMessageResults,
+                        searchBusy = globalMessageSearching,
+                        onSearchMessages = vm::searchAllMessages,
                         summaries = summaryById,
                         query = channelQuery,
                         onQueryChange = {
@@ -377,14 +392,19 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         },
                         onSelect = ::openChannel,
                         onAdd = { showCreate = true },
-                        onDelete = vm::deleteChannel
+                        onDelete = { id ->
+                            organization.clearChannel(id)
+                            NotificationPreferences(context).clearChannel(id)
+                            organizationRevision++
+                            vm.deleteChannel(id)
+                        }
                     )
                             }
                             androidx.compose.material3.VerticalDivider()
                             Box(Modifier.weight(0.64f).fillMaxSize()) {
                                 if (selectedId != null &&
                                     channels.any { it.id == selectedId }) {
-                                    val channel = channels.first { it.id == selectedId }
+                                    val channel = displayChannels.first { it.id == selectedId }
                                     ChatScreen(
                                         channelId = channel.id,
                                         name = channel.name,
@@ -411,7 +431,13 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         }
                     } else {
                     ChannelListScreen(
-                        channels = channels,
+                        channels = displayChannels,
+                        organization = organization,
+                        organizationRevision = organizationRevision,
+                        onOrganizationChanged = { organizationRevision++ },
+                        searchResults = globalMessageResults,
+                        searchBusy = globalMessageSearching,
+                        onSearchMessages = vm::searchAllMessages,
                         summaries = summaryById,
                         query = channelQuery,
                         onQueryChange = {
@@ -425,13 +451,18 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         },
                         onSelect = ::openChannel,
                         onAdd = { showCreate = true },
-                        onDelete = vm::deleteChannel
+                        onDelete = { id ->
+                            organization.clearChannel(id)
+                            NotificationPreferences(context).clearChannel(id)
+                            organizationRevision++
+                            vm.deleteChannel(id)
+                        }
                     )
                     }
                 }
                 "activity" -> ActivityScreen(
                     activity = activity,
-                    channels = channels.associateBy { it.id },
+                    channels = displayChannels.associateBy { it.id },
                     onOpen = ::openChannel,
                     onNotificationAction = vm::updateNotification,
                     twoPane = twoPane
@@ -439,7 +470,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                 "chat" -> {
                     val chatId = selectedId
                     if (chatId != null) {
-                    val channel = channels.firstOrNull { it.id == chatId }
+                    val channel = displayChannels.firstOrNull { it.id == chatId }
                     ChatScreen(
                         channelId = chatId,
                         name = channel?.name ?: "チャット",
