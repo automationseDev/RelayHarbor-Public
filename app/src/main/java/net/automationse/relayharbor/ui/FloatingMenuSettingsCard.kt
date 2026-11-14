@@ -186,8 +186,6 @@ internal fun FloatingMenuSettingsCard() {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            HorizontalDivider()
-            ChromeRefreshSettingsControls()
             Text(
                 "スクショは撮影するたびにAndroidの画面共有許可が必要で、撮影画像は端末に保存します。アプリの強制的な小窓化はできませんが、Galaxyのマルチウィンドウ操作方法をメニューで確認できます。",
                 style = MaterialTheme.typography.bodySmall,
