@@ -26,7 +26,6 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import androidx.core.content.FileProvider
 import net.automationse.relayharbor.R
 import java.io.File
 import java.io.FileOutputStream
@@ -218,8 +217,8 @@ class ScreenCaptureService : Service() {
             }
         }
 
-        // Android 8-9: save to application Pictures without broad storage
-        // permission; grant a read-only FileProvider URI for user sharing.
+        // Android 8-9: save to app-private Pictures without broad storage
+        // permission. No file:// URI is ever exported to other applications.
         val base = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
             ?: error("写真保存フォルダーを開けません")
         val folder = File(base, "RelayHarbor").apply { mkdirs() }
@@ -228,9 +227,7 @@ class ScreenCaptureService : Service() {
             FileOutputStream(file).use { stream ->
                 check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream))
             }
-            return FileProvider.getUriForFile(
-                this, packageName + ".fileprovider", file
-            )
+            return Uri.fromFile(file)
         } catch (e: Exception) {
             file.delete()
             throw e
@@ -248,31 +245,36 @@ class ScreenCaptureService : Service() {
     }
 
     private fun notifySaved(uri: Uri) {
-        val send = Intent(Intent.ACTION_SEND).apply {
-            type = "image/png"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            clipData = ClipData.newUri(contentResolver, "RelayHarbor screenshot", uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        val chooser = Intent.createChooser(send, "スクリーンショットを共有")
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val share = PendingIntent.getActivity(
-            this, 30035, chooser,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        // Legacy app-private file:// URIs must never be exposed through intents.
+        // Only MediaStore content URIs on Android 10+ are shared externally.
+        val share = if (Build.VERSION.SDK_INT >= 29) {
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "image/png"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = ClipData.newUri(contentResolver, "RelayHarbor screenshot", uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(send, "スクリーンショットを共有")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            PendingIntent.getActivity(
+                this, 30035, chooser,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        } else null
         val message = if (Build.VERSION.SDK_INT >= 29)
             "写真のPictures/RelayHarborに保存しました"
-        else "アプリの画像フォルダーに保存しました"
+        else "アプリ専用の画像フォルダーに保存しました（共有はAndroid 10以上）"
         runCatching {
-            getSystemService(NotificationManager::class.java).notify(
-            SAVED_ID, NotificationCompat.Builder(this, CHANNEL)
+            val notice = NotificationCompat.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle("スクリーンショットを保存しました")
                 .setContentText(message)
-                .setContentIntent(share)
-                .addAction(0, "共有", share)
                 .setAutoCancel(true)
-                .build()
+            if (share != null) {
+                notice.setContentIntent(share).addAction(0, "共有", share)
+            }
+            getSystemService(NotificationManager::class.java).notify(
+                SAVED_ID, notice.build()
             )
         }
         Toast.makeText(this, "スクリーンショットを保存しました", Toast.LENGTH_SHORT).show()
