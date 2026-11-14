@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import net.automationse.relayharbor.data.ChannelEntity
 import net.automationse.relayharbor.integration.IntegrationConnection
 import net.automationse.relayharbor.integration.IntegrationCredential
 import java.text.DateFormat
@@ -60,6 +61,8 @@ import org.json.JSONObject
 fun IntegrationsScreen(
     endpoint: String,
     configured: Boolean,
+    localChannels: List<ChannelEntity>,
+    onCreateLocalChannel: (String) -> Unit,
     connections: List<IntegrationConnection>,
     status: String,
     credential: IntegrationCredential?,
@@ -126,8 +129,12 @@ fun IntegrationsScreen(
             Text("連携先をまとめて管理", style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold)
             Text(
-                "Webhookは専用URLで受信し、RSSはフィードURLから記事を定期取得します。",
+                "Androidアプリ通知は端末内で振り分けます。Webhook・RSSはRelayサーバー経由で受信します。",
                 style = MaterialTheme.typography.bodyMedium
+            )
+            AndroidAppNotificationSettingsCard(
+                channels = localChannels,
+                onCreateChannel = onCreateLocalChannel
             )
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
