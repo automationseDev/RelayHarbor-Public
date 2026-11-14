@@ -16,11 +16,13 @@ import android.os.Build
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -40,8 +42,14 @@ class FloatingMenuService : Service() {
         /** In-process visibility toggle: no background service start is needed. */
         fun hideDuringCapture(hidden: Boolean) {
             val service = running ?: return
-            service.mainHandler.post {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                // Remove the window synchronously before opening Android's
+                // MediaProjection consent UI or starting the capture service.
                 if (running === service) service.setCaptureHidden(hidden)
+            } else {
+                service.mainHandler.post {
+                    if (running === service) service.setCaptureHidden(hidden)
+                }
             }
         }
     }
@@ -56,6 +64,7 @@ class FloatingMenuService : Service() {
     private var expanded = false
     private var suspendedForScreenshot = false
     private var foregroundStarted = false
+    private var outsideClosedAt = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -69,11 +78,19 @@ class FloatingMenuService : Service() {
     private fun setCaptureHidden(hidden: Boolean) {
         suspendedForScreenshot = hidden
         if (hidden) {
-            handle?.visibility = View.INVISIBLE
+            // INVISIBLE still leaves the overlay window allocated. Unmount the
+            // surfaces so the compositor cannot capture their last contents.
             hidePanel()
+            handle?.let { old ->
+                runCatching { windowManager.removeViewImmediate(old) }
+            }
+            handle = null
+            handleLayout = null
         } else if (FloatingMenuController.allowed(this) && preferences.load().enabled) {
-            handle?.visibility = View.VISIBLE
-            reposition()
+            runCatching {
+                if (handle == null) installHandle()
+                reposition()
+            }
         }
     }
 
@@ -86,14 +103,11 @@ class FloatingMenuService : Service() {
             }
             FloatingMenuController.ACTION_HIDE -> {
                 setCaptureHidden(true)
-                if (handle == null) stopSelf()
-                return START_NOT_STICKY
+                return START_STICKY
             }
             FloatingMenuController.ACTION_RESTORE -> {
-                if (handle != null) {
-                    setCaptureHidden(false)
-                    return START_STICKY
-                }
+                setCaptureHidden(false)
+                return START_STICKY
             }
         }
         if (!FloatingMenuController.allowed(this) || !preferences.load().enabled) {
@@ -102,8 +116,10 @@ class FloatingMenuService : Service() {
             return START_NOT_STICKY
         }
         try {
-            if (handle == null) installHandle()
-            reposition()
+            if (!suspendedForScreenshot) {
+                if (handle == null) installHandle()
+                reposition()
+            }
             if (!foregroundStarted) showOngoingNotification()
         } catch (_: Exception) {
             preferences.enabled(false)
@@ -195,7 +211,13 @@ class FloatingMenuService : Service() {
                 else -> false
             }
         }
-        label.setOnClickListener { if (expanded) hidePanel() else showPanel() }
+        label.setOnClickListener {
+            // An ACTION_OUTSIDE may close the panel just before this click
+            // reaches the handle. Do not immediately reopen it.
+            if (SystemClock.uptimeMillis() - outsideClosedAt >= 250L) {
+                if (expanded) hidePanel() else showPanel()
+            }
+        }
         val size = dp(preferences.load().handleDp)
         val params = layout(size, size + dp(14))
         handleLayout = params
@@ -205,12 +227,16 @@ class FloatingMenuService : Service() {
 
     private fun showPanel() {
         if (expanded || suspendedForScreenshot) return
-        val container = LinearLayout(this).apply {
+        val screen = displaySize()
+        val panelWidth = dp(215).coerceAtMost((screen.x - dp(60)).coerceAtLeast(dp(150)))
+        val topMargin = dp(48)
+        val bottomMargin = dp(65)
+        val panelHeight = minOf(
+            dp(420), FloatingPanelPlacement.maxHeight(screen.y, topMargin, bottomMargin)
+        )
+        val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(10), dp(10), dp(10))
-            setBackground(shape(Color.rgb(27, 39, 60), 20f))
-            elevation = dp(10).toFloat()
-            contentDescription = "RelayHarbor クイック操作"
         }
 
         fun item(label: String, action: () -> Unit) {
@@ -226,33 +252,58 @@ class FloatingMenuService : Service() {
                     action()
                 }
             }
-            val row = LinearLayout.LayoutParams(dp(195), dp(45))
+            val row = LinearLayout.LayoutParams(
+                (panelWidth - dp(20)).coerceAtLeast(dp(80)), dp(45)
+            )
             row.bottomMargin = dp(5)
-            container.addView(textView, row)
+            content.addView(textView, row)
         }
+
+        // Explicit dismissal is always available, even on devices that do not
+        // deliver outside-touch callbacks for TYPE_APPLICATION_OVERLAY.
+        item("✕  メニューを閉じる") { hidePanel() }
         item("📷  スクリーンショット") { openCaptureRequest() }
         item("⌂  ホーム") { openTab("home") }
         item("▣  チャット") { openTab("channels") }
         item("♢  通知センター") { openTab("activity") }
         item("▢  小窓表示の使い方") { openPopupGuide() }
         item("⚙  RelayHarborの設定") { openTab("settings") }
-        item("×  ランチャーを停止") {
+        item("⏻  ランチャーを停止") {
             preferences.enabled(false)
             stopSelf()
         }
 
-        val screen = displaySize()
-        val size = dp(215)
-        val params = layout(size, WindowManager.LayoutParams.WRAP_CONTENT).apply {
-            x = if (preferences.load().side == "left") dp(6)
-                else (screen.x - size - dp(6)).coerceAtLeast(0)
-            y = ((handleLayout?.y ?: dp(130)) - dp(8))
-                .coerceIn(dp(48), (screen.y - dp(430)).coerceAtLeast(dp(48)))
+        val scroll = ScrollView(this).apply {
+            addView(content)
+            isVerticalScrollBarEnabled = false
+            setBackground(shape(Color.rgb(27, 39, 60), 20f))
+            elevation = dp(10).toFloat()
+            contentDescription = "RelayHarbor クイック操作（閉じるボタンあり）"
+            alpha = preferences.load().opacity
+            setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                    outsideClosedAt = SystemClock.uptimeMillis()
+                    hidePanel()
+                    true
+                } else false
+            }
         }
-        container.alpha = preferences.load().opacity
+
+        val handleParams = handleLayout ?: return
+        val params = layout(panelWidth, panelHeight).apply {
+            flags = flags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+            // Put the panel *beside*, never over, the opener handle.
+            x = FloatingPanelPlacement.x(
+                screen.x, handleParams.x, handleParams.width, panelWidth,
+                dp(9), preferences.load().side
+            )
+            y = FloatingPanelPlacement.y(
+                screen.y, handleParams.y, panelHeight, topMargin, bottomMargin
+            )
+        }
         try {
-            windowManager.addView(container, params)
-            panel = container
+            windowManager.addView(scroll, params)
+            panel = scroll
             panelLayout = params
             expanded = true
         } catch (_: Exception) {
@@ -265,7 +316,7 @@ class FloatingMenuService : Service() {
         panel = null
         panelLayout = null
         expanded = false
-        if (old != null) runCatching { windowManager.removeView(old) }
+        if (old != null) runCatching { windowManager.removeViewImmediate(old) }
     }
 
     private fun reposition() {
@@ -299,9 +350,13 @@ class FloatingMenuService : Service() {
     }
 
     private fun openCaptureRequest() {
+        // Unmount our overlay *before* system consent to avoid black/replaced
+        // compositing regions in the eventual screenshot.
+        setCaptureHidden(true)
         val intent = Intent(this, ScreenCaptureRequestActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { startActivity(intent) }.onFailure {
+            setCaptureHidden(false)
             Toast.makeText(this, "スクリーンショットの確認画面を開けません", Toast.LENGTH_LONG).show()
         }
     }
