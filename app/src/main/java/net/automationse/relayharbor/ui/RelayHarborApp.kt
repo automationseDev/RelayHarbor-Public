@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -245,6 +246,18 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         label = { Text("ホーム") }
                     )
                     NavigationBarItem(
+                        selected = page == "calendar_weather",
+                        onClick = { page = "calendar_weather" },
+                        icon = { Icon(Icons.Default.CalendarMonth, contentDescription = null) },
+                        label = {
+                            Text(
+                                "予定・天気",
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1
+                            )
+                        }
+                    )
+                    NavigationBarItem(
                         selected = page == "channels",
                         onClick = { page = "channels" },
                         icon = { Icon(Icons.Default.ChatBubbleOutline, contentDescription = null) },
@@ -308,6 +321,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     },
                     onSync = vm::syncNow
                 )
+                "calendar_weather" -> CalendarWeatherScreen(twoPane = twoPane)
                 "channels" -> {
                     if (twoPane) {
                         Row(Modifier.fillMaxSize()) {
