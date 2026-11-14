@@ -74,6 +74,8 @@ internal fun CustomHomeDashboard(
     showHeader: Boolean,
     onShowHeaderChange: (Boolean) -> Unit,
     compactGaps: Boolean,
+    onAddAndroidWidget: () -> Unit,
+    onDeleteAndroidWidget: (String) -> Unit,
     onCompactGapsChange: (Boolean) -> Unit,
     onLayoutChange: (List<HomePanel>) -> Unit,
     onReset: () -> Unit,
@@ -166,6 +168,10 @@ internal fun CustomHomeDashboard(
                             Text("情報カードを追加")
                         }
                     }
+                    TextButton(onClick = onAddAndroidWidget) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text("Android標準ウィジェットを追加")
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -201,6 +207,9 @@ internal fun CustomHomeDashboard(
                     Text("表示するカードがありません", style = MaterialTheme.typography.titleSmall)
                     TextButton(onClick = { pickerOpen = true }) {
                         Text("カードを選択する")
+                    }
+                    TextButton(onClick = onAddAndroidWidget) {
+                        Text("Android標準ウィジェットを追加")
                     }
                 }
             }
@@ -371,7 +380,8 @@ internal fun CustomHomeDashboard(
                                         }
                                         DropdownMenuItem(
                                             text = { Text("高さを内容に合わせる") },
-                                            enabled = panel.manualHeight,
+                                            enabled = panel.manualHeight &&
+                                                !HomePanelLayout.isNative(panel.id),
                                             onClick = {
                                                 change(HomePanelLayout.automaticHeight(
                                                     profile, currentLayout, panel.id
@@ -387,6 +397,15 @@ internal fun CustomHomeDashboard(
                                                 ))
                                             }
                                         )
+                                        if (HomePanelLayout.isNative(panel.id)) {
+                                            DropdownMenuItem(
+                                                text = { Text("ウィジェットを完全に削除") },
+                                                onClick = {
+                                                    cardMenu = false
+                                                    onDeleteAndroidWidget(panel.id)
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -396,7 +415,8 @@ internal fun CustomHomeDashboard(
                         if (!editing) {
                             Box(
                                 modifier = Modifier.fillMaxWidth()
-                                    .heightIn(min = if (panel.id in HomePanelLayout.miniWidgetIds)
+                                    .heightIn(min = if (panel.id in HomePanelLayout.miniWidgetIds ||
+                                            HomePanelLayout.isNative(panel.id))
                                         36.dp else 48.dp)
                                     .padding(horizontal = 10.dp),
                                 contentAlignment = Alignment.CenterStart
@@ -405,16 +425,21 @@ internal fun CustomHomeDashboard(
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        val nativeWidget = HomePanelLayout.isNative(panel.id)
                         Box(
                             modifier = Modifier.fillMaxWidth()
                                 .then(
-                                    if (panel.manualHeight) Modifier.height(
+                                    if (panel.manualHeight || nativeWidget) Modifier.height(
                                         (24 + panel.height * 96).dp
                                     ) else Modifier.heightIn(max = (110 + panel.height * 110).dp)
                                 )
                                 .clipToBounds()
-                                .verticalScroll(rememberScrollState())
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .then(if (nativeWidget) Modifier else
+                                    Modifier.verticalScroll(rememberScrollState()))
+                                .padding(
+                                    horizontal = if (nativeWidget) 0.dp else 10.dp,
+                                    vertical = if (nativeWidget) 0.dp else 6.dp
+                                )
                         ) {
                             panelContent(panel.id)
                         }
@@ -481,7 +506,7 @@ internal fun CustomHomeDashboard(
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                             onClick = {
                                 undoPreset = activeLayout.toList()
-                                emitLayout(HomePanelLayout.preset(profile, id))
+                                emitLayout(HomePanelLayout.preset(profile, id, activeLayout))
                                 presetOpen = false
                             }
                         ) {

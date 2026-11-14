@@ -1,7 +1,14 @@
 package net.automationse.relayharbor.ui
 
+import android.app.Activity
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProviderInfo
+import android.content.Intent
+import android.widget.Toast
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
@@ -584,6 +591,118 @@ private fun HomeScreen(
     val profile = if (LocalConfiguration.current.screenWidthDp >= 600)
         HomePanelLayout.EXPANDED else HomePanelLayout.COVER
     var panels by remember(profile) { mutableStateOf(store.load(profile)) }
+    val nativeHost = remember(context) { AndroidHomeWidgetHost(context) }
+    val pendingWidgets = remember(context) { AndroidWidgetPendingStore(context) }
+    var nativePickerOpen by rememberSaveable { mutableStateOf(false) }
+
+    LifecycleStartEffect(nativeHost) {
+        runCatching { nativeHost.start() }
+        onStopOrDispose { runCatching { nativeHost.stop() } }
+    }
+
+    val finishPending: (Boolean) -> Unit = { success ->
+        pendingWidgets.pending()?.let { (id, targetProfile) ->
+            if (success && runCatching { nativeHost.info(id) }.getOrNull() != null) {
+                val old = if (targetProfile == profile) panels else store.load(targetProfile)
+                val updated = HomePanelLayout.addNative(targetProfile, old, id)
+                if (updated.any { it.id == HomePanelLayout.nativeId(id) }) {
+                    store.save(targetProfile, updated)
+                    if (targetProfile == profile) panels = updated
+                } else {
+                    runCatching { nativeHost.delete(id) }
+                    Toast.makeText(context, "追加可能なウィジェットの上限です", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                runCatching { nativeHost.delete(id) }
+            }
+            pendingWidgets.clear()
+        }
+    }
+
+    val configureLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        finishPending(result.resultCode == Activity.RESULT_OK)
+    }
+
+    val configurePending: (Int) -> Unit = { id ->
+        val info = runCatching { nativeHost.info(id) }.getOrNull()
+        if (info == null) {
+            finishPending(false)
+        } else if (info.configure != null) {
+            try {
+                configureLauncher.launch(
+                    Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE)
+                        .setComponent(info.configure)
+                        .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                )
+            } catch (_: Exception) {
+                finishPending(false)
+                Toast.makeText(context, "ウィジェットの設定画面を開けませんでした",
+                    Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            finishPending(true)
+        }
+    }
+
+    val bindLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val id = pendingWidgets.pending()?.first
+        if (result.resultCode == Activity.RESULT_OK && id != null &&
+            (result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id) ?: id) == id) {
+            configurePending(id)
+        } else {
+            finishPending(false)
+        }
+    }
+
+    val addNativeWidget: (AppWidgetProviderInfo) -> Unit = { provider ->
+        nativePickerOpen = false
+        if (panels.count { HomePanelLayout.isNative(it.id) } >=
+            HomePanelLayout.MAX_NATIVE_PER_PROFILE) {
+            Toast.makeText(context, "ウィジェットは画面ごとに16個までです",
+                Toast.LENGTH_SHORT).show()
+        } else {
+            pendingWidgets.pending()?.first?.let { stale ->
+                runCatching { nativeHost.delete(stale) }
+                pendingWidgets.clear()
+            }
+            try {
+                val id = nativeHost.allocate()
+                pendingWidgets.set(id, profile)
+                if (nativeHost.bind(id, provider)) {
+                    configurePending(id)
+                } else {
+                    bindLauncher.launch(
+                        Intent(AppWidgetManager.ACTION_APPWIDGET_BIND)
+                            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, provider.provider)
+                            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE,
+                                provider.profile)
+                    )
+                }
+            } catch (_: Exception) {
+                finishPending(false)
+                Toast.makeText(context, "ウィジェットを追加できませんでした",
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val deleteNativeWidget: (String) -> Unit = { panelId ->
+        val id = HomePanelLayout.nativeWidgetId(panelId)
+        if (id != null) {
+            panels = HomePanelLayout.removeNative(profile, panels, panelId)
+            store.save(profile, panels)
+            val otherProfile = if (profile == HomePanelLayout.COVER)
+                HomePanelLayout.EXPANDED else HomePanelLayout.COVER
+            if (store.load(otherProfile).none { it.id == panelId }) {
+                runCatching { nativeHost.delete(id) }
+            }
+        }
+    }
     var compactGaps by remember(profile) { mutableStateOf(store.compactGaps(profile)) }
     var appDrawerOpen by rememberSaveable { mutableStateOf(false) }
     var favoritesPickerOpen by rememberSaveable { mutableStateOf(false) }
@@ -609,6 +728,8 @@ private fun HomeScreen(
                 showHeader = showHeader,
                 onShowHeaderChange = onShowHeaderChange,
                 compactGaps = compactGaps,
+                onAddAndroidWidget = { nativePickerOpen = true },
+                onDeleteAndroidWidget = deleteNativeWidget,
                 onCompactGapsChange = { compact ->
                     compactGaps = compact
                     store.saveCompactGaps(profile, compact)
@@ -617,7 +738,16 @@ private fun HomeScreen(
                     panels = HomePanelLayout.normalize(profile, changed)
                     store.save(profile, panels)
                 },
-                onReset = { panels = store.reset(profile) },
+                onReset = {
+                    val oldIds = panels.mapNotNull { HomePanelLayout.nativeWidgetId(it.id) }
+                    panels = store.reset(profile)
+                    val otherProfile = if (profile == HomePanelLayout.COVER)
+                        HomePanelLayout.EXPANDED else HomePanelLayout.COVER
+                    val keep = store.load(otherProfile).map { it.id }.toSet()
+                    oldIds.filter { HomePanelLayout.nativeId(it) !in keep }.forEach { id ->
+                        runCatching { nativeHost.delete(id) }
+                    }
+                },
                 panelHeader = { id ->
                     HomePanelFixedHeader(
                         id = id,
@@ -627,11 +757,14 @@ private fun HomeScreen(
                     )
                 }
             ) { id ->
-                when (id) {
-                    "clock", "date", "weather", "agenda", "battery" -> HomeMiniWidget(
+                when {
+                    HomePanelLayout.isNative(id) -> AndroidHostedWidget(
+                        nativeHost, HomePanelLayout.nativeWidgetId(id)!!
+                    )
+                    id in setOf("clock", "date", "weather", "agenda", "battery") -> HomeMiniWidget(
                         id, onOpenCalendarWeather
                     )
-                    "overview" -> {
+                    id == "overview" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                              Text("未読 $unreadCount 件")
                             Text("チャンネル ${channels.size} 件")
@@ -642,12 +775,12 @@ private fun HomeScreen(
                             )
                         }
                     }
-                    "apps" -> QuickAppsSection(
+                    id == "apps" -> QuickAppsSection(
                         showHeading = false,
                         externalPickerOpen = favoritesPickerOpen,
                         onExternalPickerChange = { favoritesPickerOpen = it }
                     )
-                    "drawer" -> {
+                    id == "drawer" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                              Button(
                                 onClick = { appDrawerOpen = true },
@@ -659,7 +792,7 @@ private fun HomeScreen(
                             }
                         }
                     }
-                    "sync" -> {
+                    id == "sync" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                              Text(
                                 if (syncAvailable) syncStatus else "Relay未接続（設定から接続）",
@@ -688,7 +821,7 @@ private fun HomeScreen(
                             }
                         }
                     }
-                    "activity" -> {
+                    id == "activity" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                              if (!showActivity) {
                                 Text("表示設定で最近の通知がオフになっています。")
@@ -712,7 +845,7 @@ private fun HomeScreen(
                             }
                         }
                     }
-                    "channels" -> {
+                    id == "channels" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                              if (!showChannels) {
                                 Text("表示設定でチャンネルがオフになっています。")
@@ -735,6 +868,11 @@ private fun HomeScreen(
             }
         }
     }
+    if (nativePickerOpen) AndroidWidgetPicker(
+        host = nativeHost,
+        onSelect = addNativeWidget,
+        onDismiss = { nativePickerOpen = false }
+    )
     if (appDrawerOpen) HomeAllAppsDrawer(onDismiss = { appDrawerOpen = false })
 }
 
@@ -745,7 +883,15 @@ private fun HomePanelFixedHeader(
     onAllActivity: () -> Unit,
     onAllChannels: () -> Unit
 ) {
-    val spec = HomePanelHeaders.spec(id)
+    val context = LocalContext.current
+    val spec = if (HomePanelLayout.isNative(id)) {
+        val nativeId = HomePanelLayout.nativeWidgetId(id)!!
+        val label = runCatching {
+            AppWidgetManager.getInstance(context).getAppWidgetInfo(nativeId)
+                ?.loadLabel(context.packageManager)
+        }.getOrNull().orEmpty()
+        HomePanelHeaderSpec(label.ifBlank { "Androidウィジェット" })
+    } else HomePanelHeaders.spec(id)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(4.dp),

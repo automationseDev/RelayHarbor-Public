@@ -13,7 +13,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-/** A fixed set of trusted built-in panels. No arbitrary remote code or widgets. */
+/** Built-in panels and locally selected, OS-bound Android AppWidget instances. */
 internal data class HomePanel(
     val id: String,
     val span: Int,
@@ -25,6 +25,16 @@ internal data class HomePanel(
 internal object HomePanelLayout {
     const val COVER = "cover"
     const val EXPANDED = "expanded"
+    const val NATIVE_PREFIX = "native_widget_"
+    const val MAX_NATIVE_PER_PROFILE = 16
+    fun nativeId(appWidgetId: Int): String = "$NATIVE_PREFIX$appWidgetId"
+    fun nativeWidgetId(panelId: String): Int? {
+        if (!panelId.startsWith(NATIVE_PREFIX)) return null
+        val suffix = panelId.removePrefix(NATIVE_PREFIX)
+        if (suffix.isEmpty() || suffix.any { !it.isDigit() } || suffix.length > 10) return null
+        return suffix.toIntOrNull()?.takeIf { it > 0 && nativeId(it) == panelId }
+    }
+    fun isNative(id: String): Boolean = nativeWidgetId(id) != null
     val miniWidgetIds = setOf("clock", "date", "weather", "agenda", "battery")
     val panelIds = listOf("overview", "apps", "drawer", "sync", "activity", "channels",
         "clock", "weather", "date", "battery", "agenda")
@@ -65,8 +75,12 @@ internal object HomePanelLayout {
         val base = default(profile)
         val maxWidth = columns(profile)
         val unique = LinkedHashMap<String, HomePanel>()
+        var nativeCount = 0
         input.forEach { panel ->
-            if (panel.id in panelIds && panel.id !in unique) {
+            val native = isNative(panel.id)
+            if ((panel.id in panelIds || (native && nativeCount < MAX_NATIVE_PER_PROFILE))
+                && panel.id !in unique) {
+                if (native) nativeCount++
                 unique[panel.id] = panel.copy(
                     span = panel.span.coerceIn(1, maxWidth),
                     height = panel.height.coerceIn(1, 6)
@@ -85,7 +99,9 @@ internal object HomePanelLayout {
      * One-tap layouts for narrow and unfolded screens. Only explicit preset selection
      * changes existing sizes or visibility. No migration of saved custom layouts.
      */
-    fun preset(profile: String, preset: String): List<HomePanel> {
+    fun preset(
+        profile: String, preset: String, current: List<HomePanel> = default(profile)
+    ): List<HomePanel> {
         val wide = profile == EXPANDED
         val order = when (preset) {
             PRESET_INFORMATION -> listOf("clock", "weather", "agenda", "date", "battery",
@@ -96,7 +112,7 @@ internal object HomePanelLayout {
                 "agenda", "activity", "battery", "date", "sync", "overview")
         }
         val original = default(profile).associateBy { it.id }
-        return order.map { id ->
+        val selected = order.map { id ->
             val span = when (id) {
                 "apps" -> columns(profile)
                 "channels", "activity" -> when (preset) {
@@ -116,6 +132,28 @@ internal object HomePanelLayout {
             }
             original.getValue(id).copy(span = span, visible = show, manualHeight = false)
         }
+        // Preset changes never silently orphan a user's configured OS widgets.
+        return selected + normalize(profile, current).filter { isNative(it.id) }
+    }
+
+    /** Newly allocated system IDs are only committed after bind/configure succeeds. */
+    fun addNative(profile: String, current: List<HomePanel>, appWidgetId: Int): List<HomePanel> {
+        val old = normalize(profile, current)
+        val id = nativeId(appWidgetId)
+        if (appWidgetId <= 0 || isNative(id).not() ||
+            old.any { it.id == id } ||
+            old.count { isNative(it.id) } >= MAX_NATIVE_PER_PROFILE) return old
+        return normalize(profile, old + HomePanel(
+            id = id,
+            span = if (profile == EXPANDED) 2 else 2,
+            height = 3,
+            manualHeight = true
+        ))
+    }
+
+    fun removeNative(profile: String, current: List<HomePanel>, id: String): List<HomePanel> {
+        if (!isNative(id)) return normalize(profile, current)
+        return normalize(profile, current.filterNot { it.id == id })
     }
 
     fun automaticHeight(profile: String, current: List<HomePanel>, id: String): List<HomePanel> =
@@ -212,11 +250,11 @@ internal object HomePanelLayout {
     }.toString()
 
     fun decode(profile: String, raw: String?): List<HomePanel> {
-        if (raw.isNullOrBlank() || raw.length > 8192) return default(profile)
+        if (raw.isNullOrBlank() || raw.length > 16384) return default(profile)
         return runCatching {
             val elements = Json.parseToJsonElement(raw) as? JsonArray
                 ?: return@runCatching default(profile)
-            val parsed = elements.take(24).mapNotNull { element ->
+            val parsed = elements.take(64).mapNotNull { element ->
                 val obj = element as? JsonObject ?: return@mapNotNull null
                 val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
                 val span = obj["span"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
