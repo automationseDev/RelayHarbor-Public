@@ -97,6 +97,7 @@ import net.automationse.relayharbor.data.NotificationAction
 import net.automationse.relayharbor.data.NotificationCenterRules
 import net.automationse.relayharbor.data.CardCodec
 import net.automationse.relayharbor.notification.NotificationOpenRequests
+import net.automationse.relayharbor.floating.FloatingNavigationRequests
 import net.automationse.relayharbor.notification.NotificationPreferences
 import net.automationse.relayharbor.notification.NotificationPriorityPolicy
 import net.automationse.relayharbor.notification.MessageNotifications
@@ -146,6 +147,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     val activity by vm.activity.collectAsState()
     val selectedId by vm.selectedChannelId.collectAsState()
     val notificationTarget by NotificationOpenRequests.channelId.collectAsState()
+    val floatingTarget by FloatingNavigationRequests.page.collectAsState()
     val messages by vm.messages.collectAsState()
     val settings by vm.connectionSettings.collectAsState()
     val saveError by vm.saveError.collectAsState()
@@ -196,6 +198,15 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
             vm.leaveChannel()
             page = "home"
             HomeLauncherRequests.consume()
+        }
+    }
+    LaunchedEffect(floatingTarget) {
+        val target = floatingTarget
+        if (target != null) {
+            if (target == "home") vm.leaveChannel()
+            if (target == "channels" && page == "chat") vm.leaveChannel()
+            page = target
+            FloatingNavigationRequests.consume(target)
         }
     }
     LaunchedEffect(page) { uiStore.savePage(page) }
