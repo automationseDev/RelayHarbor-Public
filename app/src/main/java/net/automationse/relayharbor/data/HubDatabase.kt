@@ -48,7 +48,8 @@ data class MessageEntity(
     val isRead: Boolean = true,
     @ColumnInfo(defaultValue = "0") val isPinned: Boolean = false,
     @ColumnInfo(defaultValue = "0") val savedForLater: Boolean = false,
-    @ColumnInfo(defaultValue = "0") val isDone: Boolean = false
+    @ColumnInfo(defaultValue = "0") val isDone: Boolean = false,
+    @ColumnInfo(defaultValue = "''") val sourcePackage: String = ""
 )
 
 data class ChannelSummary(
@@ -97,6 +98,9 @@ interface HubDao {
     @Query("SELECT * FROM channels WHERE name = :name LIMIT 1")
     suspend fun findChannelByName(name: String): ChannelEntity?
 
+    @Query("SELECT * FROM channels WHERE id = :id LIMIT 1")
+    suspend fun findChannelById(id: Long): ChannelEntity?
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertInboundEvent(event: InboundEventEntity): Long
 
@@ -137,7 +141,7 @@ interface HubDao {
 
 @Database(
     entities = [ChannelEntity::class, MessageEntity::class, InboundEventEntity::class],
-    version = 3, exportSchema = true
+    version = 4, exportSchema = true
 )
 abstract class HubDatabase : RoomDatabase() {
     abstract fun dao(): HubDao
@@ -165,12 +169,19 @@ abstract class HubDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN sourcePackage TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): HubDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 HubDatabase::class.java,
                 "relayharbor.db"
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .build().also { instance = it }
         }
     }
 }
