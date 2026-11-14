@@ -345,7 +345,15 @@ async def refresh(connection_id: str, force: bool = False):
 @router.post("/v1/connections/{connection_id}/refresh")
 async def refresh_endpoint(connection_id: str, authorization: str | None = Header(default=None)):
     _connections()._client(authorization)
-    return await refresh(connection_id, force=True)
+    with _server().connection() as db:
+        row = _connections()._find(db, connection_id)
+        provider = row["provider"]
+    if provider == "website":
+        import website_monitor
+        return await website_monitor.refresh(connection_id, force=True)
+    if provider == "rss":
+        return await refresh(connection_id, force=True)
+    raise HTTPException(status_code=404, detail="Connection cannot be refreshed")
 
 
 async def _run_worker():
