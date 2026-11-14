@@ -49,7 +49,11 @@ internal object CalendarHolidayPolicy {
 
     fun description(date: LocalDate, personal: PersonalHoliday? = null): String? {
         if (personal != null) return personal.displayLabel
-        return JapanesePublicHolidays.name(date)
+        return JapanesePublicHolidays.name(date) ?: when (date.dayOfWeek) {
+            DayOfWeek.SUNDAY -> "日曜日"
+            DayOfWeek.SATURDAY -> "土曜日"
+            else -> null
+        }
     }
 }
 
