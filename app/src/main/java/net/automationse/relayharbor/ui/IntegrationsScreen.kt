@@ -417,8 +417,10 @@ fun IntegrationsScreen(
                                     DropdownMenuItem(
                                         text = {
                                             Text(
-                                                if (IntegrationListPolicy.isPullSource(connection)) "今すぐ確認"
-                                                else "テスト通知"
+                                                if (IntegrationListPolicy.isPullSource(connection))
+                                                if (IntegrationListPolicy.localWatchId(connection) == localCheckingId)
+                                                    "確認中…" else "今すぐ確認"
+                                            else "テスト通知"
                                             )
                                         },
                                         enabled = connection.enabled,
@@ -455,7 +457,7 @@ fun IntegrationsScreen(
                             }
                             Switch(
                                 checked = connection.enabled,
-                                onCheckedChange = { onEdit(connection.copy(enabled = it)) }
+                                onCheckedChange = { toggleConnection(connection, it) }
                             )
                         }
                         Text("チャンネル: #${connection.channelName}")
@@ -520,6 +522,25 @@ fun IntegrationsScreen(
         }
     }
 
+    if (localCreateOpen || localEditing != null) {
+        LocalWebsiteEditor(
+            watch = localEditing,
+            channels = localChannels,
+            onCreateChannel = onCreateLocalChannel,
+            onSave = { input ->
+                saveLocal(localEditing, input).also { error ->
+                    if (error == null) {
+                        localCreateOpen = false
+                        localEditing = null
+                    }
+                }
+            },
+            onDismiss = {
+                localCreateOpen = false
+                localEditing = null
+            }
+        )
+    }
     if (createOpen) {
         IntegrationSetupWizard(
             status = status,
@@ -555,7 +576,18 @@ fun IntegrationsScreen(
             title = { Text("連携先を削除しますか？") },
             text = { Text("「${connection.name}」の連携を削除します。受信済み通知は残ります。") },
             confirmButton = {
-                Button(onClick = { onDelete(connection.id); deleting = null }) { Text("削除") }
+                Button(onClick = {
+                    val localId = IntegrationListPolicy.localWatchId(connection)
+                    if (localId == null) {
+                        onDelete(connection.id)
+                    } else {
+                        localStore.remove(localId)
+                        LocalWebsiteScheduler.cancel(context, localId)
+                        localWatches = localStore.list()
+                        localFeedback = "端末内監視を削除しました。受信済みの通知は残ります。"
+                    }
+                    deleting = null
+                }) { Text("削除") }
             },
             dismissButton = {
                 TextButton(onClick = { deleting = null }) { Text("キャンセル") }
