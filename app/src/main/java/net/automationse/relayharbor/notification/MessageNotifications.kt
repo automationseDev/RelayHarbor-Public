@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import net.automationse.relayharbor.MainActivity
 import net.automationse.relayharbor.R
 import net.automationse.relayharbor.data.ImportedRelayMessage
+import net.automationse.relayharbor.data.ChannelOrganizationStore
 
 const val EXTRA_OPEN_CHANNEL_ID = "net.automationse.relayharbor.OPEN_CHANNEL_ID"
 
@@ -25,8 +26,6 @@ object VisibleChat {
 }
 
 object MessageNotifications {
-    private fun channelKey(id: Long): String = "rh_channel_$id"
-
     fun hasPermission(context: Context): Boolean =
         (Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(
@@ -35,15 +34,26 @@ object MessageNotifications {
             NotificationManagerCompat.from(context).areNotificationsEnabled()
 
     fun ensureChannel(context: Context, id: Long, name: String): String {
-        val key = channelKey(id)
+        val priority = NotificationPreferences(context).channelPriority(id)
+        val key = NotificationPriorityPolicy.key(id, priority)
         val manager = context.getSystemService(NotificationManager::class.java)
+        val importance = when (priority) {
+            NotificationPriorityPolicy.HIGH -> NotificationManager.IMPORTANCE_HIGH
+            NotificationPriorityPolicy.SILENT -> NotificationManager.IMPORTANCE_LOW
+            else -> NotificationManager.IMPORTANCE_DEFAULT
+        }
+        val displayedName = ChannelOrganizationStore(context).displayName(id, name)
         val channel = NotificationChannel(
             key,
-            name.take(60),
-            NotificationManager.IMPORTANCE_DEFAULT
+            displayedName.take(60) + if (priority == NotificationPriorityPolicy.NORMAL)
+                "" else "（" + NotificationPriorityPolicy.label(priority) + "）",
+            importance
         ).apply {
-            description = "RelayHarbor: $name"
-            enableVibration(true)
+            description = "RelayHarbor: " + displayedName
+            enableVibration(priority != NotificationPriorityPolicy.SILENT)
+            if (priority == NotificationPriorityPolicy.SILENT) {
+                setSound(null, null)
+            }
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
         manager.createNotificationChannel(channel)
@@ -108,6 +118,7 @@ object MessageNotifications {
         key: String
     ) {
         val systemChannel = ensureChannel(context, channelId, channelName)
+        val displayName = ChannelOrganizationStore(context).displayName(channelId, channelName)
         val intent = Intent(context, MainActivity::class.java).apply {
             putExtra(EXTRA_OPEN_CHANNEL_ID, channelId)
             action = "net.automationse.relayharbor.open." + key.hashCode()
@@ -122,7 +133,7 @@ object MessageNotifications {
         val displayed = if (summary.isEmpty()) "新しいメッセージが届きました" else summary
         val notification = NotificationCompat.Builder(context, systemChannel)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(channelName)
+            .setContentTitle(displayName)
             .setContentText("$sender: $displayed")
             .setStyle(NotificationCompat.BigTextStyle().bigText("$sender: $displayed"))
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
