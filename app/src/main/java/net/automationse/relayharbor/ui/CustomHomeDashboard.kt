@@ -65,6 +65,8 @@ import kotlin.math.roundToInt
 internal fun CustomHomeDashboard(
     profile: String,
     layout: List<HomePanel>,
+    showHeader: Boolean,
+    onShowHeaderChange: (Boolean) -> Unit,
     onLayoutChange: (List<HomePanel>) -> Unit,
     onReset: () -> Unit,
     panelContent: @Composable (String) -> Unit
@@ -125,6 +127,24 @@ internal fun CustomHomeDashboard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall
                     )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("RelayHarbor ヘッダー", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "オフにするとホーム画面上部のタイトルバーが消えます",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = showHeader,
+                            onCheckedChange = onShowHeaderChange
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = { showPanelPicker = true }) {
                             Icon(Icons.Default.Add, contentDescription = null)
