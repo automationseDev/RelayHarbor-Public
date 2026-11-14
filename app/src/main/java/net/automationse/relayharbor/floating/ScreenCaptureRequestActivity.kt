@@ -19,8 +19,6 @@ import androidx.core.content.ContextCompat
 class ScreenCaptureRequestActivity : ComponentActivity() {
     companion object {
         const val ACTION_POPUP_GUIDE = "net.automationse.relayharbor.floating.POPUP_GUIDE"
-        const val ACTION_CHROME_HARD_RELOAD_GUIDE =
-            "net.automationse.relayharbor.floating.CHROME_HARD_RELOAD_GUIDE"
         const val EXTRA_RESULT_CODE = "projection_result_code"
         const val EXTRA_RESULT_INTENT = "projection_result_intent"
         const val EXTRA_SCROLL_CAPTURE = "net.automationse.relayharbor.floating.LONG_SCREENSHOT"
@@ -59,10 +57,6 @@ class ScreenCaptureRequestActivity : ComponentActivity() {
             showPopupGuide()
             return
         }
-        if (intent?.action == ACTION_CHROME_HARD_RELOAD_GUIDE) {
-            showChromeReloadGuide()
-            return
-        }
         if (savedInstanceState != null) {
             // Do not re-use stale consent; restore our launcher if this
             // transient activity was recreated while the user was deciding.
@@ -78,23 +72,6 @@ class ScreenCaptureRequestActivity : ComponentActivity() {
             Toast.makeText(this, "画面キャプチャの許可画面を開けませんでした", Toast.LENGTH_LONG).show()
             finish()
         }
-    }
-
-    private fun showChromeReloadGuide() {
-        AlertDialog.Builder(this)
-            .setTitle("Chromeの強制リロード")
-            .setMessage(
-                "ChromeのAndroid版では、外付けキーボードで" +
-                    "「Ctrl + Shift + R」または「Shift + F5」を押すと、" +
-                    "キャッシュを無視して現在のページを再読み込みできます。\n\n" +
-                    "RelayHarborが他アプリへキー入力を送る標準Android APIはないため、" +
-                    "このメニューは操作方法の案内です。" +
-                    "通常の再読み込みは「Chrome再読み込み」から利用できます。" +
-                    "強制リロードを実行したとは表示しません。"
-            )
-            .setPositiveButton("閉じる") { _, _ -> finish() }
-            .setOnCancelListener { finish() }
-            .show()
     }
 
     private fun showPopupGuide() {

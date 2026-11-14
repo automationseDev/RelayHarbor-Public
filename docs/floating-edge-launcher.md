@@ -115,35 +115,3 @@ Android 15 overlay FGS制約: https://developer.android.com/about/versions/15/be
 Z Foldのカバー／展開画面それぞれで、ブラウザー記事や長いチャット履歴を上から順に手動スクロールし、画像の重なり、固定ヘッダー・フッター、操作パネルがPNGへ入らないこと、同意キャンセル、画面回転時の終了、メモリ使用量、保存後のハンドル復元を確認してください。CIでは結合位置のJVM単体テストを実行しますが、実機のスクロール判定と保存品質までは保証できません。
 
 Android公式: https://developer.android.com/media/grow/media-projection ／ https://developer.android.com/reference/android/view/ScrollCaptureCallback （ScrollCaptureCallbackは**スクロール対象アプリがシステムに描画を提供する側**のAPIであり、RelayHarborが他アプリに対して任意に起動できるものではありません）。
-
-## v0.10.1 — Chromeの再読み込み
-
-フローティングランチャーにChrome専用の2項目を追加しました。
-
-- **🔄 Chrome再読み込み**: 通常リロード。ユーザーが押したときだけ、許可済みのAndroidユーザー補助サービスがChromeのネイティブな再読み込みボタンを探してクリックします。見つからなければ失敗と表示し、Chromeの「︙」メニューからの手動再読み込みを案内します。Webページ中にある「再読み込み」というボタンを押しません。
-- **⚡ キャッシュ無視の方法**: Chrome公式の外付けキーボードショートカット「Ctrl+Shift+R」または「Shift+F5」の操作方法を案内する項目です。このボタンでは強制リロードを実行しません。Android標準APIから他社アプリに物理キーのショートカットを送信する公開の手段はありません。
-
-### 初回のユーザー補助権限
-
-1. RelayHarborの「設定 → サイドフローティングランチャー → Chromeの再読み込み」で「Chrome操作を設定する」をタップ。
-2. ChromeのUIボタンを確認・操作するためにAndroidユーザー補助権限が必要というアプリ内の開示を確認します。同意する場合のみ「同意してAndroidの設定を開く」を選択します。
-3. Androidの「ユーザー補助」設定で「RelayHarbor Chromeの再読み込み操作」を有効にします。権限を許可するだけで勝手にリロードはしません。
-4. Chromeを前面に開き、フローティングメニューから「Chrome再読み込み」を押します。
-
-Androidユーザー補助サービスには、一般に画面内容を確認し操作できる強い権限があります。RelayHarborは対象アプリをChromeパッケージ（com.android.chrome）のみに限定し、ユーザーが明示的にボタンを押したときだけChromeのネイティブなツールバー・メニューのボタンの説明を確認します。Webページ本文、閲覧URL、履歴、入力内容、パスワード、クリップボードは収集・保存・外部送信しません。アクセシビリティイベントは受信しますが処理せず、勝手に定期操作しません。Androidの設定でいつでも解除できます。
-
-Google Play公開には、非アクセシビリティアプリでのユーザー補助APIの利用理由をPlay Consoleへ申告し、ストア掲載の開示とアプリ内同意の要件を満たす必要があります。端末への直接インストールではAndroidの「制限付き設定」によりユーザー補助許可がブロックされる可能性もあります。OSの制限を回避しません。
-
-Chrome更新により再読み込みボタンの表示構造や名前が変わると操作できなくなる可能性があります。「送信済み」はChromeのボタンがクリック要求を受理した意味であり、再取得の完了やキャッシュ無視は保証しません。
-
-参考: Chrome公式 https://support.google.com/chrome/answer/157179?co=GENIE.Platform%3DAndroid ／ Android公式 https://developer.android.com/guide/topics/ui/accessibility/service ／ Google Playポリシー https://support.google.com/googleplay/android-developer/answer/10964491?hl=ja
-
-### 実機確認項目
-
-- Chrome日本語/英語版、三点メニュー内の更新ボタン、Chrome以外のアプリでの拒否
-- ユーザー補助未許可・許可済み・解除状態と、アプリ内の許可説明画面
-- ページ内の「再読み込み」ボタンを誤ってクリックしないこと
-- Chromeの更新、Z Fold展開/折りたたみ、他のフローティングメニュー機能への影響
-- CIのJVMテストはChromeのコントロール判定のみ。Chrome実機での自動クリックは別途動作確認が必要
-
-NAS・Relayサーバー側の更新は不要です。

@@ -33,8 +33,7 @@ import kotlin.math.abs
 /**
  * User-activated overlay. The visible foreground-service notification always
  * gives the user a way to stop it. No accessibility automation, touch injection,
- * notification snooping, or hidden capture occurs. Optional Chrome reload is
- * driven by a Chrome-only, user-enabled service after a deliberate tap.
+ * notification snooping, or hidden capture occurs.
  */
 class FloatingMenuService : Service() {
     companion object {
@@ -263,8 +262,6 @@ class FloatingMenuService : Service() {
         // Explicit dismissal is always available, even on devices that do not
         // deliver outside-touch callbacks for TYPE_APPLICATION_OVERLAY.
         item("✕  メニューを閉じる") { hidePanel() }
-        item("🔄  Chrome再読み込み") { reloadChrome() }
-        item("⚡  キャッシュ無視の方法") { openChromeHardReloadGuide() }
         item("📷  スクリーンショット") { openCaptureRequest() }
         item("📜  ロングスクショ（スクロール）") { openCaptureRequest(scrolling = true) }
         item("⌂  ホーム") { openTab("home") }
@@ -350,38 +347,6 @@ class FloatingMenuService : Service() {
             .putExtra(FloatingMenuController.EXTRA_TAB, tab)
         runCatching { startActivity(intent) }.onFailure {
             Toast.makeText(this, "RelayHarborを開けませんでした", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun reloadChrome() {
-        ChromeRefreshAccessibilityService.requestRefresh { result ->
-            when (result) {
-                ChromeRefreshAccessibilityService.Result.SENT ->
-                    Toast.makeText(this, "Chromeに再読み込み操作を送りました", Toast.LENGTH_SHORT).show()
-                ChromeRefreshAccessibilityService.Result.NOT_ENABLED -> {
-                    Toast.makeText(this,
-                        "Chrome操作のユーザー補助許可が必要です。設定画面で有効にしてください",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    openTab("settings")
-                }
-                ChromeRefreshAccessibilityService.Result.NOT_CHROME ->
-                    Toast.makeText(this, "Chromeのタブが前面にありません", Toast.LENGTH_LONG).show()
-                ChromeRefreshAccessibilityService.Result.CONTROL_MISSING ->
-                    Toast.makeText(this,
-                        "Chromeの再読み込みボタンを特定できません。Chromeの︙メニューから操作してください",
-                        Toast.LENGTH_LONG
-                    ).show()
-            }
-        }
-    }
-
-    private fun openChromeHardReloadGuide() {
-        val intent = Intent(this, ScreenCaptureRequestActivity::class.java)
-            .setAction(ScreenCaptureRequestActivity.ACTION_CHROME_HARD_RELOAD_GUIDE)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching { startActivity(intent) }.onFailure {
-            Toast.makeText(this, "Chromeの操作案内を開けません", Toast.LENGTH_SHORT).show()
         }
     }
 
