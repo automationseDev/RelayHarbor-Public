@@ -4,6 +4,9 @@ import android.app.Application
 import android.net.Uri
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -61,6 +64,29 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     val activity: StateFlow<List<MessageEntity>> = repository.activity.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
+    val messageSearchResults = MutableStateFlow<List<MessageEntity>>(emptyList())
+    val messageSearchBusy = MutableStateFlow(false)
+    private var messageSearchJob: Job? = null
+
+    /** Debounced local Room query; no message text is sent to Relay or an AI API. */
+    fun searchAllMessages(query: String) {
+        messageSearchJob?.cancel()
+        messageSearchResults.value = emptyList()
+        messageSearchBusy.value = query.trim().length >= 2
+        if (!messageSearchBusy.value) return
+        val term = query.trim().take(100)
+        messageSearchJob = viewModelScope.launch {
+            delay(250L)
+            try {
+                messageSearchResults.value = withContext(Dispatchers.IO) {
+                    repository.searchAllMessages(term)
+                }
+            } finally {
+                messageSearchBusy.value = false
+            }
+        }
+    }
+
     val selectedChannelId: StateFlow<Long?> = currentChannel
     val messages = currentChannel.flatMapLatest { id ->
         if (id == null) flowOf(emptyList()) else repository.messages(id)
