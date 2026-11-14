@@ -21,6 +21,7 @@ class ScreenCaptureRequestActivity : ComponentActivity() {
         const val ACTION_POPUP_GUIDE = "net.automationse.relayharbor.floating.POPUP_GUIDE"
         const val EXTRA_RESULT_CODE = "projection_result_code"
         const val EXTRA_RESULT_INTENT = "projection_result_intent"
+        const val EXTRA_SCROLL_CAPTURE = "net.automationse.relayharbor.floating.LONG_SCREENSHOT"
     }
 
     private val consent = registerForActivityResult(
@@ -31,7 +32,9 @@ class ScreenCaptureRequestActivity : ComponentActivity() {
             // Hide both overlay windows before the screenshot session.
             FloatingMenuController.hideForCapture(this)
             try {
-                val capture = Intent(this, ScreenCaptureService::class.java)
+                val service = if (intent?.getBooleanExtra(EXTRA_SCROLL_CAPTURE, false) == true)
+                    ScrollingScreenshotService::class.java else ScreenCaptureService::class.java
+                val capture = Intent(this, service)
                     .putExtra(EXTRA_RESULT_CODE, result.resultCode)
                     .putExtra(EXTRA_RESULT_INTENT, data)
                 ContextCompat.startForegroundService(this, capture)
