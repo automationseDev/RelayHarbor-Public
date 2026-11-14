@@ -1,6 +1,9 @@
 package net.automationse.relayharbor.floating
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.Context
+import android.view.accessibility.AccessibilityManager
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
@@ -29,6 +32,17 @@ class ChromeRefreshAccessibilityService : AccessibilityService() {
         @Volatile private var active: ChromeRefreshAccessibilityService? = null
 
         fun connected(): Boolean = active != null
+
+        fun permissionEnabled(context: Context): Boolean = runCatching {
+            val manager = context.getSystemService(Context.ACCESSIBILITY_SERVICE)
+                as AccessibilityManager
+            manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+                .any {
+                    it.resolveInfo?.serviceInfo?.packageName == context.packageName &&
+                        it.resolveInfo?.serviceInfo?.name ==
+                            ChromeRefreshAccessibilityService::class.java.name
+                }
+        }.getOrDefault(false)
 
         fun requestRefresh(onResult: (Result) -> Unit) {
             val service = active
