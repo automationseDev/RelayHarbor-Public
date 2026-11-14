@@ -269,7 +269,7 @@ fun IntegrationsScreen(
                     }
                     Text(
                         if (transferBusy) "連携設定の転送中です…"
-                        else "連携名・通知先・RSS/Web監視設定をJSONで移行。認証トークンは含めません。Webhookは新しいトークンを発行します。",
+                        else "JSONの入出力対象はRelay側の連携のみです（端末内監視はこの端末に保存）。Webhookの認証トークンは含めません。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -297,9 +297,9 @@ fun IntegrationsScreen(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                listOf("all" to "すべて", "rss" to "RSS",
-                    "website" to "Web監視", "webhook" to "Webhook",
-                    "active" to "有効").forEach { (type, label) ->
+                listOf("all" to "すべて", "local" to "端末内",
+                    "website" to "Web監視", "rss" to "RSS",
+                    "webhook" to "Webhook", "active" to "有効").forEach { (type, label) ->
                     FilterChip(
                         selected = connectionType == type,
                         onClick = {
@@ -337,13 +337,17 @@ fun IntegrationsScreen(
                     label = { Text("小さく") }
                 )
             }
+            if (localFeedback.isNotBlank()) {
+                Text(localFeedback, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary)
+            }
             Text(
-                "表示 ${visibleConnections.size} / ${connections.size} 件",
+                "表示 ${visibleConnections.size} / ${allConnections.size} 件",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (visibleConnections.isEmpty()) Text(
-                if (connections.isEmpty()) "連携先はまだ登録されていません。"
+                if (allConnections.isEmpty()) "連携先はまだ登録されていません。"
                 else "条件に合う連携先がありません。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -367,7 +371,7 @@ fun IntegrationsScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    "${when (connection.provider) { "rss" -> "RSS"; "website" -> "Web監視"; "github_actions" -> "GitHub"; else -> "Webhook" }} · #${connection.channelName}",
+                                    "${IntegrationListPolicy.typeLabel(connection)} · #${connection.channelName}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -383,7 +387,7 @@ fun IntegrationsScreen(
                             }
                             Switch(
                                 checked = connection.enabled,
-                                onCheckedChange = { onEdit(connection.copy(enabled = it)) }
+                                onCheckedChange = { toggleConnection(connection, it) }
                             )
                             Box {
                                 IconButton(onClick = { menuOpen = true }) {
@@ -398,13 +402,13 @@ fun IntegrationsScreen(
                                 ) {
                                     DropdownMenuItem(
                                         text = { Text("編集・詳細") },
-                                        onClick = { menuOpen = false; editing = connection }
+                                        onClick = { menuOpen = false; editConnection(connection) }
                                     )
                                     DropdownMenuItem(
                                         text = { Text("URLをコピー") },
                                         onClick = {
                                             menuOpen = false
-                                            val url = if (connection.provider in setOf("rss", "website"))
+                                            val url = if (IntegrationListPolicy.isPullSource(connection))
                                                 connection.feedUrl
                                             else baseUrl + connection.path
                                             clipboard.setText(AnnotatedString(url))
@@ -413,18 +417,17 @@ fun IntegrationsScreen(
                                     DropdownMenuItem(
                                         text = {
                                             Text(
-                                                if (connection.provider in setOf("rss", "website")) "今すぐ確認"
+                                                if (IntegrationListPolicy.isPullSource(connection)) "今すぐ確認"
                                                 else "テスト通知"
                                             )
                                         },
                                         enabled = connection.enabled,
                                         onClick = {
                                             menuOpen = false
-                                            if (connection.provider in setOf("rss", "website")) onRefreshFeed(connection.id)
-                                            else onTest(connection.id)
+                                            checkConnection(connection)
                                         }
                                     )
-                                    if (connection.provider !in setOf("rss", "website")) {
+                                    if (!IntegrationListPolicy.isPullSource(connection)) {
                                         DropdownMenuItem(
                                             text = { Text("鍵更新") },
                                             onClick = { menuOpen = false; rotating = connection }
@@ -446,12 +449,8 @@ fun IntegrationsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween) {
                             Column(Modifier.weight(1f)) {
                                 Text(connection.name, fontWeight = FontWeight.Bold)
-                                Text(when (connection.provider) {
-                                    "rss" -> "RSS / Atom フィード"
-                                    "website" -> "RSS不要・Webページ更新監視"
-                                    "github_actions" -> "GitHub Actions JSON Webhook"
-                                    else -> "カスタムWebhook"
-                                }, style = MaterialTheme.typography.labelSmall,
+                                Text(IntegrationListPolicy.detailLabel(connection),
+                                    style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Switch(
@@ -460,9 +459,9 @@ fun IntegrationsScreen(
                             )
                         }
                         Text("チャンネル: #${connection.channelName}")
-                        if (connection.provider in setOf("rss", "website")) {
+                        if (IntegrationListPolicy.isPullSource(connection)) {
                             Text(connection.feedUrl, style = MaterialTheme.typography.bodySmall)
-                            if (connection.provider == "website") Text(
+                            if (IntegrationListPolicy.isWebsite(connection)) Text(
                                 "監視範囲: " + connection.cssSelector.ifBlank { "ページの本文全体" },
                                 style = MaterialTheme.typography.bodySmall
                             )
@@ -472,6 +471,11 @@ fun IntegrationsScreen(
                                 "最終取得: ${DateFormat.getDateTimeInstance().format(Date(connection.lastSuccess))}",
                                 style = MaterialTheme.typography.bodySmall
                             )
+                            if (connection.provider == IntegrationListPolicy.LOCAL_WEBSITE &&
+                                connection.lastSuccess == 0L
+                            ) Text("初回の監視基準を保存する前です",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (connection.lastError.isNotBlank()) Text(
                                 "取得エラー: ${connection.lastError}",
                                 style = MaterialTheme.typography.bodySmall,
@@ -481,8 +485,11 @@ fun IntegrationsScreen(
                                 TextButton(onClick = {
                                     clipboard.setText(AnnotatedString(connection.feedUrl))
                                 }) { Text("URLコピー") }
-                                TextButton(onClick = { onRefreshFeed(connection.id) },
-                                    enabled = connection.enabled) { Text(if (connection.provider == "website") "今すぐ確認" else "今すぐ取得") }
+                                TextButton(onClick = { checkConnection(connection) },
+                                    enabled = connection.enabled && localCheckingId == null
+                                ) { Text(if (connection.provider == "rss") "今すぐ取得"
+                                    else if (IntegrationListPolicy.localWatchId(connection) == localCheckingId)
+                                        "確認中…" else "今すぐ確認") }
                             }
                         } else {
                             Text("最低評価スコア: ${connection.minScore} / キーワード: ${connection.keyword.ifBlank { "なし" }}",
@@ -496,8 +503,8 @@ fun IntegrationsScreen(
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { editing = connection }) { Text("編集") }
-                            if (connection.provider !in setOf("rss", "website")) {
+                            TextButton(onClick = { editConnection(connection) }) { Text("編集") }
+                            if (!IntegrationListPolicy.isPullSource(connection)) {
                                 TextButton(onClick = { rotating = connection }) { Text("鍵更新") }
                             }
                             TextButton(onClick = { deleting = connection }) { Text("削除") }
@@ -507,7 +514,7 @@ fun IntegrationsScreen(
                 }
             }
             HorizontalDivider()
-            Text("RSSとWeb更新監視は公開HTTPSサイトに対応（15分〜24時間間隔）。Web監視の初回は基準保存のみ。JavaScript生成やログイン必須のページは対象外です。",
+            Text("RSSとWeb監視は公開HTTPSサイトに対応。端末内Web監視はサーバー不要（省電力時は遅延あり）。初回は基準保存のみ。JavaScript生成やログイン必須のページは対象外です。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
