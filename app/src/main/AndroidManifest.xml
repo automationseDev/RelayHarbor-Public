@@ -56,6 +56,10 @@
             android:name=".floating.ScreenCaptureService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+        <service
+            android:name=".floating.ScrollingScreenshotService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
         <activity
             android:name=".floating.ScreenCaptureRequestActivity"
             android:exported="false"
