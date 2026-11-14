@@ -24,14 +24,21 @@ internal data class HomePanel(
 internal object HomePanelLayout {
     const val COVER = "cover"
     const val EXPANDED = "expanded"
-    val panelIds = listOf("overview", "apps", "drawer", "sync", "activity", "channels")
+    val miniWidgetIds = setOf("clock", "date", "weather", "agenda", "battery")
+    val panelIds = listOf("overview", "apps", "drawer", "sync", "activity", "channels",
+        "clock", "weather", "date", "battery", "agenda")
     val titles = mapOf(
         "overview" to "ワークスペース",
         "apps" to "お気に入りアプリ",
         "drawer" to "アプリ一覧",
         "sync" to "同期・通知",
         "activity" to "最近の通知",
-        "channels" to "チャットチャンネル"
+        "channels" to "チャットチャンネル",
+        "clock" to "時計",
+        "date" to "日付",
+        "weather" to "現在の天気",
+        "agenda" to "次の予定",
+        "battery" to "バッテリー"
     )
 
     fun columns(profile: String): Int = if (profile == EXPANDED) 4 else 2
@@ -43,7 +50,12 @@ internal object HomePanelLayout {
             HomePanel("apps", if (wide) 4 else 2, 3),
             HomePanel("sync", if (wide) 2 else 2, 2),
             HomePanel("activity", if (wide) 2 else 2, 3),
-            HomePanel("channels", if (wide) 4 else 2, 3)
+            HomePanel("channels", if (wide) 4 else 2, 3),
+            HomePanel("clock", if (wide) 2 else 1, 1),
+            HomePanel("weather", if (wide) 2 else 1, 1),
+            HomePanel("date", 1, 1),
+            HomePanel("battery", 1, 1),
+            HomePanel("agenda", if (wide) 2 else 1, 1, visible = false)
         )
     }
 
@@ -63,6 +75,12 @@ internal object HomePanelLayout {
         base.forEach { if (it.id !in unique) unique[it.id] = it }
         return unique.values.toList()
     }
+
+    /** Show built-in information cards without modifying existing card sizes or order. */
+    fun enableMiniWidgets(profile: String, current: List<HomePanel>): List<HomePanel> =
+        normalize(profile, current).map { panel ->
+            if (panel.id in miniWidgetIds) panel.copy(visible = true) else panel
+        }
 
     fun move(profile: String, current: List<HomePanel>, from: String, to: String): List<HomePanel> {
         val normalized = normalize(profile, current)
