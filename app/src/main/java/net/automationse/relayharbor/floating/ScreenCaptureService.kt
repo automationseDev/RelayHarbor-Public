@@ -1,5 +1,6 @@
 package net.automationse.relayharbor.floating
 
+import java.util.concurrent.atomic.AtomicBoolean
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -124,11 +125,11 @@ class ScreenCaptureService : Service() {
         val width = size.x.coerceAtLeast(1)
         val height = size.y.coerceAtLeast(1)
         val density = resources.displayMetrics.densityDpi
-        var stopped = false
+        val stopped = AtomicBoolean(false)
         var virtualDisplay: VirtualDisplay? = null
         val images = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         val callback = object : MediaProjection.Callback() {
-            override fun onStop() { stopped = true }
+            override fun onStop() { stopped.set(true) }
         }
         try {
             projection.registerCallback(callback, main)
@@ -141,7 +142,7 @@ class ScreenCaptureService : Service() {
             )
             var bitmap: Bitmap? = null
             val deadline = System.currentTimeMillis() + 4600L
-            while (System.currentTimeMillis() < deadline && !stopped) {
+            while (System.currentTimeMillis() < deadline && !stopped.get()) {
                 val image = images.acquireLatestImage()
                 if (image != null) {
                     try {
@@ -154,7 +155,15 @@ class ScreenCaptureService : Service() {
                         )
                         try {
                             padded.copyPixelsFromBuffer(plane.buffer)
-                            bitmap = Bitmap.createBitmap(padded, 0, 0, width, height)
+                            val cropped = Bitmap.createBitmap(padded, 0, 0, width, height)
+                            // createBitmap may reuse the source when no crop is needed.
+                            // Force an independent copy before recycling the padded buffer.
+                            try {
+                                bitmap = cropped.copy(Bitmap.Config.ARGB_8888, false)
+                                    ?: error("画像を変換できませんでした")
+                            } finally {
+                                if (cropped !== padded) cropped.recycle()
+                            }
                         } finally {
                             padded.recycle()
                         }
