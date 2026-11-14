@@ -174,7 +174,7 @@ async def _check_public_dns(url: str):
         raise ValueError("RSS hostname resolves to a non-public IP address")
 
 
-async def _download(url, etag="", modified="", *, accept=None, user_agent=None):
+async def _download(url, etag="", modified="", *, accept=None, user_agent=None, require_html=False):
     headers = {
         "User-Agent": user_agent or "RelayHarbor-RSS/0.5 (+feed reader)",
         "Accept": accept or "application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
@@ -205,6 +205,10 @@ async def _download(url, etag="", modified="", *, accept=None, user_agent=None):
                 if response.status_code == 304:
                     return None, etag, modified
                 response.raise_for_status()
+                if require_html:
+                    mime = response.headers.get("Content-Type", "").split(";")[0].lower().strip()
+                    if mime and mime not in ("text/html", "application/xhtml+xml"):
+                        raise ValueError("Website URL did not return HTML")
                 data = bytearray()
                 async for chunk in response.aiter_bytes():
                     data.extend(chunk)
