@@ -42,20 +42,6 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
-        <!-- Chrome refresh only. Explicit Android Accessibility access is required.
-             Chrome is the sole package allowed by the service's XML metadata. -->
-        <service
-            android:name=".floating.ChromeRefreshAccessibilityService"
-            android:label="@string/chrome_accessibility_service_name"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/chrome_refresh_accessibility" />
-        </service>
         <!-- Overlay and capture services are private to this app. -->
         <service
             android:name=".floating.FloatingMenuService"
