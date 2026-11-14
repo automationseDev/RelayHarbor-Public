@@ -118,6 +118,12 @@ internal class WorkspaceUiStore(context: Context) {
         preferences.edit().putBoolean("show_remote_thumbnails", value).apply()
     }
 
+    /** The application name bar can be hidden without hiding Home editing/navigation. */
+    fun showHomeHeader(): Boolean = preferences.getBoolean("show_home_header", true)
+    fun saveShowHomeHeader(value: Boolean) {
+        preferences.edit().putBoolean("show_home_header", value).apply()
+    }
+
     fun showHomeActivity(): Boolean = preferences.getBoolean("show_home_activity", true)
     fun saveShowHomeActivity(value: Boolean) {
         preferences.edit().putBoolean("show_home_activity", value).apply()
