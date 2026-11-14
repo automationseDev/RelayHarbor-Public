@@ -81,7 +81,14 @@ internal fun ChannelAppearanceDialog(
                 enabled = label.isNotBlank()
             ) { Text("保存") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
+        dismissButton = {
+            Row {
+                TextButton(onClick = { onSave("", ChannelOrganizationRules.cleanEmoji(emoji)) }) {
+                    Text("表示名を元に戻す")
+                }
+                TextButton(onClick = onDismiss) { Text("キャンセル") }
+            }
+        }
     )
 }
 
