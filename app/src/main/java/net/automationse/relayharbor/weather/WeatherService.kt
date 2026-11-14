@@ -3,7 +3,7 @@ package net.automationse.relayharbor.weather
 import android.content.Context
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
-import java.net.HttpsURLConnection
+import javax.net.ssl.HttpsURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.util.Locale
