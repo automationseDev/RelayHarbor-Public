@@ -710,8 +710,10 @@ private fun HomeScreen(
     var appDrawerOpen by rememberSaveable { mutableStateOf(false) }
     var favoritesPickerOpen by rememberSaveable { mutableStateOf(false) }
     val unreadCount = summaries.values.sumOf { it.unreadCount }
+    val homePinned = remember(context, channels) { ChannelPinStore(context).load() }
     val recentChannels = channels.sortedWith(
-        compareByDescending<ChannelEntity> { summaries[it.id]?.lastTimestamp ?: 0L }
+        compareByDescending<ChannelEntity> { it.id in homePinned }
+            .thenByDescending { summaries[it.id]?.lastTimestamp ?: 0L }
             .thenBy { it.position }
     ).take(5)
 
@@ -865,7 +867,8 @@ private fun HomeScreen(
                                 recentChannels.forEach { channel ->
                                     ChannelItem(
                                         channel, summaries[channel.id],
-                                        onClick = { onOpen(channel.id) }
+                                        onClick = { onOpen(channel.id) },
+                                        pinned = channel.id in homePinned
                                     )
                                 }
                             }
