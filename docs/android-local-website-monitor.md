@@ -40,3 +40,17 @@ Source edits to URL or CSS selector intentionally reset the baseline. Disable/en
 Automated JVM tests cover safe URL/interval validation, CSS extraction and rejection, text hashing, and changes. Android CI should compile the UI and WorkManager integration. Manual tests still required on the user's device: background Doze, interrupted connectivity, app force-stop, notification permission denial, Fold cover/unfolded UI, and restart persistence.
 
 No NAS or Relay server update is required for **端末内監視**. The prior Relay server watcher remains unchanged.
+
+## v0.9.7 — unified integration cards
+
+After registration, Android-local watches are **not nested in the Web monitoring setup card**. All local and Relay integrations now appear together in the **same integration-card list**, using the same regular/compact card layout setting, search field, service filter chips and standard action controls.
+
+- Filter **すべて**: Webhook/RSS/Relay websites and local website watches in one list.
+- Filter **端末内**: show only device-local watches. **Web監視**: show both local and Relay website watches.
+- Each card identifies its monitoring mode: **Web監視・端末内** or **Web監視・Relay**.
+- Shared regular/compact layouts, enabled switch, menu/details, URL copy, manual check, edit and delete.
+- Local actions never issue Relay network calls; the cards use distinct device identifiers and retain their existing local snapshots.
+- The top Web監視 section is now only a small **registration selector** with 端末内 and Relay options. The local watch list was removed from that section.
+- Existing watches remain intact; no migration, NAS update or re-registration needed.
+- The JSON export/import controls remain Relay-only. Local watch settings are device-private and **not** included in those exports.
+

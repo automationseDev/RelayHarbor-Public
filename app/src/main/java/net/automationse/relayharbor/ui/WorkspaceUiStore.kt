@@ -15,7 +15,7 @@ internal class WorkspaceUiStore(context: Context) {
         private val tabs = setOf("home", "calendar_weather", "channels", "activity", "integrations", "settings", "chat")
         private val channelFilters = setOf("all", "recent", "unread", "pinned")
         private val activityFilters = setOf("all", "important", "unread", "later", "done", "read")
-        private val integrationFilters = setOf("all", "rss", "webhook", "active")
+        private val integrationFilters = setOf("all", "local", "website", "rss", "webhook", "active")
 
         fun safePage(value: String?): String =
             value?.takeIf { it in tabs } ?: "home"

@@ -19,6 +19,8 @@ class WorkspaceUiStoreTest {
         assertEquals("all", WorkspaceUiStore.channelFilter("read"))
         assertEquals("read", WorkspaceUiStore.activityFilter("read"))
         assertEquals("all", WorkspaceUiStore.activityFilter("recent"))
+        assertEquals("local", WorkspaceUiStore.integrationFilter("local"))
+        assertEquals("website", WorkspaceUiStore.integrationFilter("website"))
         assertEquals("rss", WorkspaceUiStore.integrationFilter("rss"))
         assertEquals("webhook", WorkspaceUiStore.integrationFilter("webhook"))
         assertEquals("active", WorkspaceUiStore.integrationFilter("active"))
