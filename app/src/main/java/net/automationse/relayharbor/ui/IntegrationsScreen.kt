@@ -240,6 +240,9 @@ fun IntegrationsScreen(
             )
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Relayサーバー連携の設定",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold)
                     Text(status, color = MaterialTheme.colorScheme.secondary)
                     if (!configured) Text(
                         "設定タブでHTTPS接続先とRelayアクセストークンを登録してください。",
@@ -416,14 +419,18 @@ fun IntegrationsScreen(
                                     )
                                     DropdownMenuItem(
                                         text = {
-                                            Text(
-                                                if (IntegrationListPolicy.isPullSource(connection))
-                                                if (IntegrationListPolicy.localWatchId(connection) == localCheckingId)
-                                                    "確認中…" else "今すぐ確認"
-                                            else "テスト通知"
-                                            )
+                                            Text(when {
+                                                IntegrationListPolicy.localWatchId(connection) != null &&
+                                                    IntegrationListPolicy.localWatchId(connection) == localCheckingId ->
+                                                    "確認中…"
+                                                connection.provider == "rss" -> "今すぐ取得"
+                                                IntegrationListPolicy.isPullSource(connection) -> "今すぐ確認"
+                                                else -> "テスト通知"
+                                            })
                                         },
-                                        enabled = connection.enabled,
+                                        enabled = connection.enabled &&
+                                            (IntegrationListPolicy.localWatchId(connection) == null ||
+                                                localCheckingId == null),
                                         onClick = {
                                             menuOpen = false
                                             checkConnection(connection)
@@ -488,7 +495,9 @@ fun IntegrationsScreen(
                                     clipboard.setText(AnnotatedString(connection.feedUrl))
                                 }) { Text("URLコピー") }
                                 TextButton(onClick = { checkConnection(connection) },
-                                    enabled = connection.enabled && localCheckingId == null
+                                    enabled = connection.enabled &&
+                                        (IntegrationListPolicy.localWatchId(connection) == null ||
+                                            localCheckingId == null)
                                 ) { Text(if (connection.provider == "rss") "今すぐ取得"
                                     else if (IntegrationListPolicy.localWatchId(connection) == localCheckingId)
                                         "確認中…" else "今すぐ確認") }
