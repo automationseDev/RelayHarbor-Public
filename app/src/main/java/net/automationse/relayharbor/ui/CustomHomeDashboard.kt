@@ -87,8 +87,14 @@ internal fun CustomHomeDashboard(
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            // With the app-title bar hidden, start Home content close to the safe top edge.
+            // The parent Scaffold already keeps it below the Android status bar.
+            .padding(
+                start = 12.dp, end = 12.dp,
+                top = if (showHeader) 10.dp else 2.dp,
+                bottom = 10.dp
+            ),
+        verticalArrangement = Arrangement.spacedBy(if (showHeader) 12.dp else 8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
