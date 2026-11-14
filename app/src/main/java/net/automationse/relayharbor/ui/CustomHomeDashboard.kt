@@ -78,6 +78,10 @@ internal fun CustomHomeDashboard(
     var activeDragId by remember(profile) { mutableStateOf<String?>(null) }
     var hoverTarget by remember(profile) { mutableStateOf<String?>(null) }
     val liveLayout by rememberUpdatedState(layout)
+    val packedLayout = remember(profile, layout) {
+        HomePanelLayout.packedVisible(profile, layout)
+    }
+    val livePackedLayout by rememberUpdatedState(packedLayout)
     // Controls apply only to the current cover/expanded layout, not both.
     val updateLayout by rememberUpdatedState(onLayoutChange)
 
@@ -133,7 +137,7 @@ internal fun CustomHomeDashboard(
                 }
             }
         }
-        items(layout.filter { it.visible }, key = { it.id }, span = { GridItemSpan(it.span) }) { panel ->
+        items(packedLayout, key = { it.id }, span = { GridItemSpan(it.span) }) { panel ->
             DisposableEffect(profile, panel.id) {
                 onDispose { positions.remove(panel.id) }
             }
@@ -196,7 +200,7 @@ internal fun CustomHomeDashboard(
                                     onDragEnd = {
                                         hoverTarget?.let { target ->
                                             updateLayout(
-                                                HomePanelLayout.move(profile, liveLayout, panel.id, target)
+                                                HomePanelLayout.move(profile, livePackedLayout, panel.id, target)
                                             )
                                         }
                                         dragging = false
@@ -243,7 +247,7 @@ internal fun CustomHomeDashboard(
                         panelContent(panel.id)
                     }
                     if (editMode) {
-                        val visibleIds = liveLayout.filter { it.visible }.map { it.id }
+                        val visibleIds = livePackedLayout.map { it.id }
                         val index = visibleIds.indexOf(panel.id)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -254,7 +258,7 @@ internal fun CustomHomeDashboard(
                                 onClick = {
                                     if (index > 0) updateLayout(
                                         HomePanelLayout.move(
-                                            profile, liveLayout, panel.id, visibleIds[index - 1]
+                                            profile, livePackedLayout, panel.id, visibleIds[index - 1]
                                         )
                                     )
                                 }
@@ -264,7 +268,7 @@ internal fun CustomHomeDashboard(
                                 onClick = {
                                     if (index in 0 until visibleIds.lastIndex) updateLayout(
                                         HomePanelLayout.move(
-                                            profile, liveLayout, panel.id, visibleIds[index + 1]
+                                            profile, livePackedLayout, panel.id, visibleIds[index + 1]
                                         )
                                     )
                                 }
