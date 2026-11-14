@@ -226,7 +226,7 @@ internal fun ActivityItem(
                 }
                 if (!compact) {
                     Box {
-                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(34.dp)) {
+                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Default.MoreVert, contentDescription = "通知の操作")
                         }
                         DropdownMenu(
