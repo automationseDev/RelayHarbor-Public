@@ -320,6 +320,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     onOpen = ::openChannel,
                     onAllChannels = { page = "channels" },
                     onAllActivity = { page = "activity" },
+                    onOpenCalendarWeather = { page = "calendar_weather" },
                     onNotificationAction = vm::updateNotification,
                     showHeader = showHomeHeader,
                     onShowHeaderChange = { visible ->
@@ -562,6 +563,7 @@ private fun HomeScreen(
     onOpen: (Long) -> Unit,
     onAllChannels: () -> Unit,
     onAllActivity: () -> Unit,
+    onOpenCalendarWeather: () -> Unit,
     onNotificationAction: (Long, NotificationAction) -> Unit,
     showHeader: Boolean,
     onShowHeaderChange: (Boolean) -> Unit,
@@ -626,7 +628,9 @@ private fun HomeScreen(
                 }
             ) { id ->
                 when (id) {
-                    "clock", "date", "weather", "agenda", "battery" -> HomeMiniWidget(id)
+                    "clock", "date", "weather", "agenda", "battery" -> HomeMiniWidget(
+                        id, onOpenCalendarWeather
+                    )
                     "overview" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                              Text("未読 $unreadCount 件")
