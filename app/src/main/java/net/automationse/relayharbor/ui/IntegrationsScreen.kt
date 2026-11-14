@@ -267,7 +267,7 @@ fun IntegrationsScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    "${if (connection.provider == "rss") "RSS" else if (connection.provider == "github_actions") "GitHub" else "Webhook"} · #${connection.channelName}",
+                                    "${when (connection.provider) { "rss" -> "RSS"; "website" -> "Web監視"; "github_actions" -> "GitHub"; else -> "Webhook" }} · #${connection.channelName}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -397,7 +397,7 @@ fun IntegrationsScreen(
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(onClick = { editing = connection }) { Text("編集") }
-                            if (connection.provider != "rss") {
+                            if (connection.provider !in setOf("rss", "website")) {
                                 TextButton(onClick = { rotating = connection }) { Text("鍵更新") }
                             }
                             TextButton(onClick = { deleting = connection }) { Text("削除") }
@@ -471,11 +471,17 @@ fun IntegrationsScreen(
         AlertDialog(
             // Do not silently discard a freshly created one-time token.
             onDismissRequest = {},
-            title = { Text(if (created.connection.provider == "rss") "RSSを登録しました" else "連携を作成しました") },
+            title = { Text(when (created.connection.provider) {
+                "rss" -> "RSSを登録しました"
+                "website" -> "Web監視を登録しました"
+                else -> "連携を作成しました"
+            }) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (created.connection.provider == "rss") {
-                        Text("登録が完了しました。以下のボタンから記事取得をテストできます。")
+                    if (created.connection.provider in setOf("rss", "website")) {
+                        Text(if (created.connection.provider == "website")
+                            "登録完了。初回確認は現在のページを基準として保存し、通知しません。"
+                            else "登録が完了しました。以下のボタンから記事取得をテストできます。")
                         Text(created.connection.feedUrl, style = MaterialTheme.typography.bodySmall)
                         Text("間隔: ${created.connection.pollIntervalMinutes}分",
                             style = MaterialTheme.typography.bodySmall)
@@ -503,12 +509,16 @@ fun IntegrationsScreen(
                         enabled = created.token.isBlank() || tokenCopied,
                         onClick = {
                             testRequested = true
-                            if (created.connection.provider == "rss")
+                            if (created.connection.provider in setOf("rss", "website"))
                                 onRefreshFeed(created.connection.id)
                             else onTest(created.connection.id)
                         }
                     ) {
-                        Text(if (created.connection.provider == "rss") "今すぐ記事を取得" else "テスト通知を送信")
+                        Text(when (created.connection.provider) {
+                            "rss" -> "今すぐ記事を取得"
+                            "website" -> "今すぐ確認・基準を保存"
+                            else -> "テスト通知を送信"
+                        })
                     }
                     if (testRequested) {
                         Text(
@@ -537,7 +547,7 @@ private fun ConnectionEditorDialog(
     initial: IntegrationConnection?,
     onDismiss: () -> Unit,
     onDiscard: () -> Unit = onDismiss,
-    onSave: (String, String, String, Int, String, String, Int) -> Unit
+    onSave: (String, String, String, Int, String, String, Int, String) -> Unit
 ) {
     val context = LocalContext.current
     val savedDraft = remember(initial?.id) {
@@ -564,10 +574,13 @@ private fun ConnectionEditorDialog(
     var interval by rememberSaveable(initial?.id) {
         mutableStateOf(initial?.pollIntervalMinutes ?: savedDraft?.optInt("interval", 30) ?: 30)
     }
-    LaunchedEffect(initial?.id, provider, name, channel, minScore, keyword, feedUrl, interval) {
+    var cssSelector by rememberSaveable(initial?.id) {
+        mutableStateOf(initial?.cssSelector ?: savedDraft?.optString("cssSelector", "") ?: "")
+    }
+    LaunchedEffect(initial?.id, provider, name, channel, minScore, keyword, feedUrl, interval, cssSelector) {
         if (initial == null) {
             IntegrationDraftStore.save(context, provider, name, channel,
-                minScore.toInt(), keyword, feedUrl, interval)
+                minScore.toInt(), keyword, feedUrl, interval, cssSelector = cssSelector)
         }
     }
     AlertDialog(
@@ -577,7 +590,10 @@ private fun ConnectionEditorDialog(
             Column(Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (initial == null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         FilterChip(selected = provider == "webhook",
                             onClick = {
                                 provider = "webhook"; name = "新しい連携"; channel = "Webhook"
@@ -590,6 +606,10 @@ private fun ConnectionEditorDialog(
                             onClick = {
                                 provider = "rss"; name = "RSSニュース"; channel = "RSS"
                             }, label = { Text("RSS") })
+                        FilterChip(selected = provider == "website",
+                            onClick = {
+                                provider = "website"; name = "サイト更新"; channel = "Web更新"
+                            }, label = { Text("Web監視") })
                     }
                 }
                 if (initial == null) Text("入力内容は自動保存されます。閉じても次回再開できます。",
