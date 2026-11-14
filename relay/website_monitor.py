@@ -177,7 +177,8 @@ async def _download(url: str, etag: str = "", modified: str = ""):
     return await rss._download(
         url, etag, modified,
         accept="text/html, application/xhtml+xml;q=0.9, */*;q=0.1",
-        user_agent="RelayHarbor-WebsiteMonitor/0.6 (change detection)"
+        user_agent="RelayHarbor-WebsiteMonitor/0.6 (change detection)",
+        require_html=True
     )
 
 
