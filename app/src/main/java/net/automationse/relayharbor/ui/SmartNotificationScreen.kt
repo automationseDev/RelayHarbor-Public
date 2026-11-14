@@ -318,6 +318,9 @@ private fun NotificationInspector(
                 message.text, style = MaterialTheme.typography.bodyMedium
             )
             if (card != null) RichCardView(card, density = CardDensity.DETAILED)
+            if (message.sourcePackage.isNotBlank()) {
+                SourceAppOpenButton(message.sourcePackage)
+            }
             NotificationActionBar(message, onAction)
         }
         TextButton(onClick = { onOpenChat(message.channelId) }) {
