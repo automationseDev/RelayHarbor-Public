@@ -45,10 +45,11 @@ class HomeMasonryTest {
             gapPx = 8
         )
         assertEquals(6, placements.size)
-        placements.forEachIndexed { i, left ->
+        for (i in placements.indices) {
+            val left = placements[i]
             assertTrue(left.widthPx > 0 && left.topPx >= 0)
-            placements.forEachIndexed { j, right ->
-                if (i >= j) return@forEachIndexed
+            for (j in (i + 1) until placements.size) {
+                val right = placements[j]
                 val xLeft = left.firstColumn * 108
                 val xRight = right.firstColumn * 108
                 val intersects = xLeft < xRight + right.widthPx &&
