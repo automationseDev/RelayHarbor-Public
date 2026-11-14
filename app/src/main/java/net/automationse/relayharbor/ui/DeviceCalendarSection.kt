@@ -22,16 +22,12 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -317,8 +313,11 @@ internal fun DeviceCalendarSection() {
                         note,
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (personalDays[selected]?.type == PersonalHolidayType.WORKDAY)
-                            MaterialTheme.colorScheme.onSurfaceVariant else redText
+                        color = when (CalendarHolidayPolicy.tone(selected, personalDays[selected])) {
+                            CalendarDayTone.HOLIDAY -> redText
+                            CalendarDayTone.SATURDAY -> blueText
+                            CalendarDayTone.REGULAR -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                     else Text("通常日", modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.labelSmall,
