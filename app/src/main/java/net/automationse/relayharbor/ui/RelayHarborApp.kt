@@ -102,6 +102,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     var resumeLastPage by remember { mutableStateOf(uiStore.resumeLastPage()) }
     var showHomeActivity by remember { mutableStateOf(uiStore.showHomeActivity()) }
     var showHomeChannels by remember { mutableStateOf(uiStore.showHomeChannels()) }
+    var showHomeHeader by remember { mutableStateOf(uiStore.showHomeHeader()) }
     var foregroundActive by remember { mutableStateOf(false) }
     var foregroundSyncSeconds by remember {
         mutableStateOf(uiStore.foregroundSyncSeconds())
@@ -275,6 +276,11 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     onAllChannels = { page = "channels" },
                     onAllActivity = { page = "activity" },
                     onNotificationAction = vm::updateNotification,
+                    showHeader = showHomeHeader,
+                    onShowHeaderChange = { visible ->
+                        showHomeHeader = visible
+                        uiStore.saveShowHomeHeader(visible)
+                    },
                     showActivity = showHomeActivity,
                     showChannels = showHomeChannels,
                     onShowActivityChange = {
@@ -439,6 +445,11 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     onShowHomeChannelsChange = {
                         showHomeChannels = it
                         uiStore.saveShowHomeChannels(it)
+                    },
+                    showHomeHeader = showHomeHeader,
+                    onShowHomeHeaderChange = {
+                        showHomeHeader = it
+                        uiStore.saveShowHomeHeader(it)
                     }
                 )
             }
@@ -504,6 +515,8 @@ private fun HomeScreen(
     onAllChannels: () -> Unit,
     onAllActivity: () -> Unit,
     onNotificationAction: (Long, NotificationAction) -> Unit,
+    showHeader: Boolean,
+    onShowHeaderChange: (Boolean) -> Unit,
     showActivity: Boolean,
     showChannels: Boolean,
     onShowActivityChange: (Boolean) -> Unit,
@@ -528,11 +541,17 @@ private fun HomeScreen(
             .thenBy { it.position }
     ).take(5)
 
-    Scaffold(topBar = { WorkspaceBar("RelayHarbor", "あなたのワークスペース") }) { inner ->
+    Scaffold(
+        topBar = {
+            if (showHeader) WorkspaceBar("RelayHarbor", "あなたのワークスペース")
+        }
+    ) { inner ->
         Box(Modifier.fillMaxSize().padding(inner)) {
             CustomHomeDashboard(
                 profile = profile,
                 layout = panels,
+                showHeader = showHeader,
+                onShowHeaderChange = onShowHeaderChange,
                 onLayoutChange = { changed ->
                     panels = HomePanelLayout.normalize(profile, changed)
                     store.save(profile, panels)
