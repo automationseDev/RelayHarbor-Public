@@ -214,8 +214,13 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
         VisibleChat.channelId = if (page == "chat" || (twoPane && page == "channels"))
             selectedId ?: 0L else 0L
     }
-    LaunchedEffect(twoPane, page) {
-        if (twoPane && page == "chat" && selectedId != null) page = "channels"
+    // Keep the selected conversation visible across Fold open/close transitions.
+    LaunchedEffect(twoPane) {
+        if (twoPane && page == "chat" && selectedId != null) {
+            page = "channels"
+        } else if (!twoPane && page == "channels" && selectedId != null) {
+            page = "chat"
+        }
     }
 
     BackHandler(enabled = page == "chat") { closeChat() }
