@@ -120,4 +120,4 @@ def test_validation_and_legacy_compatibility(client):
                         json={"keyword": "test"}).status_code == 200
     assert client.post("/v1/webhooks/github-actions", headers=LEGACY,
                        json={"text": "Legacy works"}).status_code == 201
-    assert client.get("/healthz").json()["version"] == "0.5.2"
+    assert client.get("/healthz").json()["version"] == "0.6.0"
