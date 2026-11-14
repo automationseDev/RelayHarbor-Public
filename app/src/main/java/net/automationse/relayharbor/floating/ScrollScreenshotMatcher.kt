@@ -26,9 +26,7 @@ internal data class ScrollBand(val top: Int, val bottom: Int) {
     val height: Int get() = bottom - top
 }
 
-internal data class ScrollMatch(val shift: Int, val error: Double) {
-    val overlap: Int get() = 0 // Use band.height - shift for overlap.
-}
+internal data class ScrollMatch(val shift: Int, val error: Double)
 
 internal object ScrollScreenshotMatcher {
     const val MAX_FRAMES = 7
@@ -70,7 +68,7 @@ internal object ScrollScreenshotMatcher {
                 .count { delta[it] } >= 3
         val start = (0 until a.height).firstOrNull { populated(it) } ?: return null
         val end = (a.height - 1 downTo 0).firstOrNull { populated(it) } ?: return null
-        val top = (start + 2).coerceAtLeast(0)
+        val top = (start + 3).coerceAtLeast(0)
         val bottom = (end - 2).coerceAtMost(a.height)
         if (bottom - top < a.height * 0.28) return null
         return ScrollBand(top, bottom)
