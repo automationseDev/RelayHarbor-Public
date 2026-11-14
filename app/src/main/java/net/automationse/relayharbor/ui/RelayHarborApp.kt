@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
 import net.automationse.relayharbor.data.ChannelEntity
+import net.automationse.relayharbor.data.ChannelOrganizationStore
 import net.automationse.relayharbor.data.ChannelSummary
 import net.automationse.relayharbor.data.MessageEntity
 import net.automationse.relayharbor.data.NotificationAction
@@ -97,6 +98,7 @@ import net.automationse.relayharbor.data.NotificationCenterRules
 import net.automationse.relayharbor.data.CardCodec
 import net.automationse.relayharbor.notification.NotificationOpenRequests
 import net.automationse.relayharbor.notification.NotificationPreferences
+import net.automationse.relayharbor.notification.NotificationPriorityPolicy
 import net.automationse.relayharbor.notification.MessageNotifications
 import net.automationse.relayharbor.notification.VisibleChat
 
@@ -133,6 +135,13 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     var channelQuery by rememberSaveable { mutableStateOf(uiStore.channelSearch()) }
     var channelFilter by rememberSaveable { mutableStateOf(uiStore.channelListFilter()) }
     val channels by vm.channels.collectAsState()
+    val organization = remember(context) { ChannelOrganizationStore(context) }
+    var organizationRevision by remember { mutableStateOf(0) }
+    val displayChannels = remember(channels, organizationRevision) {
+        channels.map(organization::present)
+    }
+    val globalMessageResults by vm.messageSearchResults.collectAsState()
+    val globalMessageSearching by vm.messageSearchBusy.collectAsState()
     val summaries by vm.channelSummaries.collectAsState()
     val activity by vm.activity.collectAsState()
     val selectedId by vm.selectedChannelId.collectAsState()
@@ -324,7 +333,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
             pageStates.SaveableStateProvider(page) {
             when (page) {
                 "home" -> HomeScreen(
-                    channels = channels,
+                    channels = displayChannels,
                     summaries = summaryById,
                     activity = activity,
                     onOpen = ::openChannel,
@@ -363,7 +372,13 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         Row(Modifier.fillMaxSize()) {
                             Box(Modifier.weight(0.36f).fillMaxSize()) {
                     ChannelListScreen(
-                        channels = channels,
+                        channels = displayChannels,
+                        organization = organization,
+                        organizationRevision = organizationRevision,
+                        onOrganizationChanged = { organizationRevision++ },
+                        searchResults = globalMessageResults,
+                        searchBusy = globalMessageSearching,
+                        onSearchMessages = vm::searchAllMessages,
                         summaries = summaryById,
                         query = channelQuery,
                         onQueryChange = {
@@ -377,14 +392,19 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         },
                         onSelect = ::openChannel,
                         onAdd = { showCreate = true },
-                        onDelete = vm::deleteChannel
+                        onDelete = { id ->
+                            organization.clearChannel(id)
+                            NotificationPreferences(context).clearChannel(id)
+                            organizationRevision++
+                            vm.deleteChannel(id)
+                        }
                     )
                             }
                             androidx.compose.material3.VerticalDivider()
                             Box(Modifier.weight(0.64f).fillMaxSize()) {
                                 if (selectedId != null &&
                                     channels.any { it.id == selectedId }) {
-                                    val channel = channels.first { it.id == selectedId }
+                                    val channel = displayChannels.first { it.id == selectedId }
                                     ChatScreen(
                                         channelId = channel.id,
                                         name = channel.name,
@@ -411,7 +431,13 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         }
                     } else {
                     ChannelListScreen(
-                        channels = channels,
+                        channels = displayChannels,
+                        organization = organization,
+                        organizationRevision = organizationRevision,
+                        onOrganizationChanged = { organizationRevision++ },
+                        searchResults = globalMessageResults,
+                        searchBusy = globalMessageSearching,
+                        onSearchMessages = vm::searchAllMessages,
                         summaries = summaryById,
                         query = channelQuery,
                         onQueryChange = {
@@ -425,13 +451,18 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         },
                         onSelect = ::openChannel,
                         onAdd = { showCreate = true },
-                        onDelete = vm::deleteChannel
+                        onDelete = { id ->
+                            organization.clearChannel(id)
+                            NotificationPreferences(context).clearChannel(id)
+                            organizationRevision++
+                            vm.deleteChannel(id)
+                        }
                     )
                     }
                 }
                 "activity" -> ActivityScreen(
                     activity = activity,
-                    channels = channels.associateBy { it.id },
+                    channels = displayChannels.associateBy { it.id },
                     onOpen = ::openChannel,
                     onNotificationAction = vm::updateNotification,
                     twoPane = twoPane
@@ -439,7 +470,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                 "chat" -> {
                     val chatId = selectedId
                     if (chatId != null) {
-                    val channel = channels.firstOrNull { it.id == chatId }
+                    val channel = displayChannels.firstOrNull { it.id == chatId }
                     ChatScreen(
                         channelId = chatId,
                         name = channel?.name ?: "チャット",
@@ -948,6 +979,12 @@ private fun EmptyHint(message: String) {
 @Composable
 private fun ChannelListScreen(
     channels: List<ChannelEntity>,
+    organization: ChannelOrganizationStore,
+    organizationRevision: Int,
+    onOrganizationChanged: () -> Unit,
+    searchResults: List<MessageEntity>,
+    searchBusy: Boolean,
+    onSearchMessages: (String) -> Unit,
     summaries: Map<Long, ChannelSummary>,
     query: String,
     onQueryChange: (String) -> Unit,
@@ -958,11 +995,26 @@ private fun ChannelListScreen(
     onDelete: (Long) -> Unit
 ) {
     var pendingDelete by remember { mutableStateOf<ChannelEntity?>(null) }
+    var editingChannel by remember { mutableStateOf<ChannelEntity?>(null) }
+    var assigningFolder by remember { mutableStateOf<ChannelEntity?>(null) }
+    var priorityChannel by remember { mutableStateOf<ChannelEntity?>(null) }
+    var managingFolders by remember { mutableStateOf(false) }
+    var searchAllOpen by remember { mutableStateOf(false) }
+    var selectedFolder by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val notificationPrefs = remember(context) { NotificationPreferences(context) }
     val pinStore = remember(context) { ChannelPinStore(context) }
     var pinned by remember(context) { mutableStateOf(pinStore.load()) }
-    val visible = ChannelPinPolicy.visible(channels, summaries, query, filter, pinned)
+    val folders = remember(organizationRevision) { organization.folders() }
+    val filtered = ChannelPinPolicy.visible(channels, summaries, query, filter, pinned)
+        .filter { selectedFolder == null || organization.folder(it.id) == selectedFolder }
+    // Group channels under their folder names without losing the in-folder sort.
+    val orderById = filtered.mapIndexed { index, channel -> channel.id to index }.toMap()
+    val visible = filtered.sortedWith(
+        compareByDescending<ChannelEntity> { it.id in pinned }
+            .thenBy { organization.folder(it.id) }
+            .thenBy { orderById[it.id] ?: Int.MAX_VALUE }
+    )
     val unreadTotal = channels.sumOf { summaries[it.id]?.unreadCount ?: 0 }
 
     Scaffold(
@@ -993,6 +1045,20 @@ private fun ChannelListScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
             )
             Row(
+                modifier = Modifier.fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                TextButton(onClick = { searchAllOpen = true }) {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                    Text("メッセージ横断検索")
+                }
+                TextButton(onClick = { managingFolders = true }) {
+                    Text("📁 フォルダー管理")
+                }
+            }
+            Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.horizontalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 2.dp)
@@ -1001,6 +1067,29 @@ private fun ChannelListScreen(
                     "recent" to "最近", "unread" to "未読").forEach { (value, label) ->
                     FilterChip(selected = filter == value, onClick = { onFilterChange(value) },
                         label = { Text(label) })
+                }
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 2.dp)
+            ) {
+                FilterChip(
+                    selected = selectedFolder == null,
+                    onClick = { selectedFolder = null },
+                    label = { Text("全フォルダー") }
+                )
+                FilterChip(
+                    selected = selectedFolder == "",
+                    onClick = { selectedFolder = "" },
+                    label = { Text("未分類") }
+                )
+                folders.forEach { folder ->
+                    FilterChip(
+                        selected = selectedFolder == folder,
+                        onClick = { selectedFolder = folder },
+                        label = { Text("📁 " + folder) }
+                    )
                 }
             }
             Text(
@@ -1021,18 +1110,21 @@ private fun ChannelListScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 92.dp)
                 ) {
                     itemsIndexed(visible, key = { _, channel -> channel.id }) { index, channel ->
-                        if (query.isBlank() && filter != "pinned" && filter != "unread") {
-                            val firstPinned = channel.id in pinned &&
-                                (index == 0 || visible[index - 1].id !in pinned)
-                            val firstOther = channel.id !in pinned &&
-                                (index == 0 || visible[index - 1].id in pinned)
-                            if (firstPinned || firstOther) {
-                                Text(if (firstPinned) "★ お気に入り" else "すべてのチャンネル",
-                                    modifier = Modifier.fillMaxWidth()
-                                        .padding(start = 18.dp, top = 12.dp, bottom = 5.dp),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                        val section = (if (channel.id in pinned) "★ " else "") +
+                            (organization.folder(channel.id).ifBlank { "未分類" })
+                        val priorSection = if (index == 0) "" else {
+                            val previous = visible[index - 1]
+                            (if (previous.id in pinned) "★ " else "") +
+                                organization.folder(previous.id).ifBlank { "未分類" }
+                        }
+                        if (index == 0 || priorSection != section) {
+                            Text(
+                                section,
+                                modifier = Modifier.fillMaxWidth()
+                                    .padding(start = 18.dp, top = 12.dp, bottom = 5.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.weight(1f)) {
@@ -1046,6 +1138,32 @@ private fun ChannelListScreen(
                                     Icon(Icons.Default.MoreVert, contentDescription = "チャンネルの操作")
                                 }
                                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("表示名・アイコンを編集") },
+                                        onClick = {
+                                            showMenu = false
+                                            editingChannel = channel
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("フォルダーを変更") },
+                                        onClick = {
+                                            showMenu = false
+                                            assigningFolder = channel
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text("通知の優先度：" +
+                                                NotificationPriorityPolicy.label(
+                                                    notificationPrefs.channelPriority(channel.id)
+                                                ))
+                                        },
+                                        onClick = {
+                                            showMenu = false
+                                            priorityChannel = channel
+                                        }
+                                    )
                                     DropdownMenuItem(
                                         text = { Text(if (channel.id in pinned)
                                             "お気に入りを解除" else "お気に入りに固定") },
@@ -1101,6 +1219,75 @@ private fun ChannelListScreen(
             }
         }
     }
+    if (searchAllOpen) {
+        ChannelSearchDialog(
+            channels = channels,
+            results = searchResults,
+            busy = searchBusy,
+            onQuery = onSearchMessages,
+            onOpenChannel = onSelect,
+            onDismiss = { searchAllOpen = false }
+        )
+    }
+    if (managingFolders) {
+        ChannelFolderManagerDialog(
+            folders = folders,
+            onCreate = { name ->
+                val changed = organization.addFolder(name)
+                if (changed) onOrganizationChanged()
+                changed
+            },
+            onRename = { old, new ->
+                val changed = organization.renameFolder(old, new)
+                if (changed) {
+                    if (selectedFolder == old) selectedFolder =
+                        net.automationse.relayharbor.data.ChannelOrganizationRules.cleanFolder(new)
+                    onOrganizationChanged()
+                }
+                changed
+            },
+            onRemove = { folder ->
+                organization.deleteFolder(folder)
+                if (selectedFolder == folder) selectedFolder = null
+                onOrganizationChanged()
+            },
+            onDismiss = { managingFolders = false }
+        )
+    }
+    editingChannel?.let { channel ->
+        ChannelAppearanceDialog(
+            channel = channel,
+            onSave = { label, emoji ->
+                organization.saveAppearance(channel.id, label, emoji)
+                onOrganizationChanged()
+                editingChannel = null
+            },
+            onDismiss = { editingChannel = null }
+        )
+    }
+    assigningFolder?.let { channel ->
+        ChannelFolderAssignDialog(
+            channelName = channel.name,
+            current = organization.folder(channel.id),
+            folders = folders,
+            onSelect = { folder ->
+                if (organization.assign(channel.id, folder)) onOrganizationChanged()
+                assigningFolder = null
+            },
+            onDismiss = { assigningFolder = null }
+        )
+    }
+    priorityChannel?.let { channel ->
+        ChannelPriorityDialog(
+            channelName = channel.name,
+            current = notificationPrefs.channelPriority(channel.id),
+            onSet = { priority ->
+                notificationPrefs.setChannelPriority(channel.id, priority)
+                priorityChannel = null
+            },
+            onDismiss = { priorityChannel = null }
+        )
+    }
     pendingDelete?.let { channel ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
@@ -1110,6 +1297,9 @@ private fun ChannelListScreen(
                 TextButton(onClick = {
                     pinned = pinned - channel.id
                     pinStore.save(pinned)
+                    organization.clearChannel(channel.id)
+                    notificationPrefs.clearChannel(channel.id)
+                    onOrganizationChanged()
                     onDelete(channel.id)
                     pendingDelete = null
                 }) { Text("削除") }

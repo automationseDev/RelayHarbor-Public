@@ -24,6 +24,21 @@ class NotificationPreferences(context: Context) {
     fun channelEnabled(id: Long): Boolean = prefs.getBoolean("channel_$id", true)
     fun setChannelEnabled(id: Long, enabled: Boolean) =
         prefs.edit().putBoolean("channel_$id", enabled).apply()
+
+    fun channelPriority(id: Long): String = NotificationPriorityPolicy.sanitize(
+        prefs.getString("priority_$id", NotificationPriorityPolicy.NORMAL)
+    )
+
+    fun setChannelPriority(id: Long, priority: String) {
+        if (id > 0) prefs.edit().putString(
+            "priority_$id", NotificationPriorityPolicy.sanitize(priority)
+        ).apply()
+    }
+
+    fun clearChannel(id: Long) {
+        if (id > 0) prefs.edit().remove("channel_$id").remove("priority_$id").apply()
+    }
+
 }
 
 /** Ignore historical backfills and suspicious future timestamps. */

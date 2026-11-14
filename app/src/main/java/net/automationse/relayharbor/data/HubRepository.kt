@@ -19,6 +19,12 @@ class HubRepository(private val dao: HubDao) {
     val channelSummaries: Flow<List<ChannelSummary>> = dao.observeChannelSummaries()
     val activity: Flow<List<MessageEntity>> = dao.observeActivity()
     fun messages(channelId: Long): Flow<List<MessageEntity>> = dao.observeMessages(channelId)
+    suspend fun searchAllMessages(query: String): List<MessageEntity> {
+        val term = query.trim().take(100)
+        if (term.length < 2) return emptyList()
+        return dao.searchAllMessages(term)
+    }
+
 
     suspend fun bootstrap() {
         if (dao.channelCount() != 0) return

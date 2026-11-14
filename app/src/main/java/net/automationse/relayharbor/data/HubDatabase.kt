@@ -78,6 +78,19 @@ interface HubDao {
     @Query("SELECT * FROM messages WHERE channelId = :channelId ORDER BY timestamp, id")
     fun observeMessages(channelId: Long): Flow<List<MessageEntity>>
 
+    /**
+     * Local-only cross-channel search. instr() treats % and _ as literal characters,
+     * avoiding wildcard surprises and expensive unbounded result lists.
+     */
+    @Query("""
+        SELECT * FROM messages
+        WHERE instr(lower(text), lower(:term)) > 0
+            OR instr(lower(sender), lower(:term)) > 0
+            OR instr(lower(COALESCE(cardJson, '')), lower(:term)) > 0
+        ORDER BY timestamp DESC, id DESC LIMIT 100
+    """)
+    suspend fun searchAllMessages(term: String): List<MessageEntity>
+
     @Query("""
         SELECT c.id AS channelId,
             (SELECT m.text FROM messages m WHERE m.channelId = c.id ORDER BY m.timestamp DESC, m.id DESC LIMIT 1) AS lastText,
