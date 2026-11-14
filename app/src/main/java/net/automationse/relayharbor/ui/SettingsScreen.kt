@@ -254,6 +254,7 @@ fun SettingsScreen(
             }
             HorizontalDivider()
             DefaultHomeSettings()
+            FloatingMenuSettingsCard()
             Text(
                 "表示設定",
                 fontWeight = FontWeight.Bold,

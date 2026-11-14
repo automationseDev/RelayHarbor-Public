@@ -3,6 +3,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Explicitly user-enabled screen-edge launcher; never granted silently. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Needed only after per-session screen capture consent. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!-- Requested at runtime only when the user opens the on-device calendar. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <!-- Discover only apps that users can launch from the device home screen. -->
@@ -36,6 +42,26 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+        <!-- Overlay and capture services are private to this app. -->
+        <service
+            android:name=".floating.FloatingMenuService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="opt_in_user_visible_floating_edge_launcher" />
+        </service>
+        <service
+            android:name=".floating.ScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+        <activity
+            android:name=".floating.ScreenCaptureRequestActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="net.automationse.relayharbor.capture"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
