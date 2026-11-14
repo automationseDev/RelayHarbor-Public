@@ -37,6 +37,8 @@ import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -70,6 +72,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -152,6 +155,10 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
             }
         }
     }
+    val showAllNavLabels = BottomNavigationPolicy.showAllLabels(
+        LocalConfiguration.current.screenWidthDp, LocalDensity.current.fontScale
+    )
+
     // A new process has no saved ViewModel channel; restore it before applying
     // the usual "chat without channel" fallback.
     LaunchedEffect(Unit) {
@@ -242,44 +249,62 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     NavigationBarItem(
                         selected = page == "home",
                         onClick = { page = "home" },
-                        icon = { Icon(Icons.Default.Home, contentDescription = null) },
-                        label = { Text("ホーム") }
+                        icon = { Icon(Icons.Default.Home, contentDescription = "ホーム") },
+                        label = { Text("ホーム", style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        alwaysShowLabel = showAllNavLabels
                     )
                     NavigationBarItem(
                         selected = page == "calendar_weather",
                         onClick = { page = "calendar_weather" },
-                        icon = { Icon(Icons.Default.CalendarMonth, contentDescription = null) },
-                        label = {
-                            Text(
-                                "予定・天気",
-                                style = MaterialTheme.typography.labelSmall,
-                                maxLines = 1
-                            )
-                        }
+                        icon = { Icon(Icons.Default.CalendarMonth, contentDescription = "予定・天気") },
+                        label = { Text("予定・天気", style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        alwaysShowLabel = showAllNavLabels
                     )
                     NavigationBarItem(
                         selected = page == "channels",
                         onClick = { page = "channels" },
-                        icon = { Icon(Icons.Default.ChatBubbleOutline, contentDescription = null) },
-                        label = { Text("チャット") }
+                        icon = { Icon(Icons.Default.ChatBubbleOutline, contentDescription = "チャット") },
+                        label = { Text("チャット", style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        alwaysShowLabel = showAllNavLabels
                     )
                     NavigationBarItem(
                         selected = page == "activity",
                         onClick = { page = "activity" },
-                        icon = { Icon(Icons.Default.NotificationsNone, contentDescription = null) },
-                        label = { Text(if (unreadCount > 0) "通知 " + unreadCount else "通知") }
+                        icon = {
+                            BadgedBox(badge = {
+                                if (unreadCount > 0) {
+                                    Badge { Text(BottomNavigationPolicy.unreadBadge(unreadCount)) }
+                                }
+                            }) {
+                                Icon(
+                                    Icons.Default.NotificationsNone,
+                                    contentDescription = if (unreadCount > 0) "通知・未読${unreadCount}件"
+                                        else "通知"
+                                )
+                            }
+                        },
+                        label = { Text("通知", style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        alwaysShowLabel = showAllNavLabels
                     )
                     NavigationBarItem(
                         selected = page == "integrations",
                         onClick = { page = "integrations" },
-                        icon = { Icon(Icons.Default.Extension, contentDescription = null) },
-                        label = { Text("連携") }
+                        icon = { Icon(Icons.Default.Extension, contentDescription = "連携") },
+                        label = { Text("連携", style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        alwaysShowLabel = showAllNavLabels
                     )
                     NavigationBarItem(
                         selected = page == "settings",
                         onClick = { page = "settings" },
-                        icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                        label = { Text("設定") }
+                        icon = { Icon(Icons.Default.Settings, contentDescription = "設定") },
+                        label = { Text("設定", style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        alwaysShowLabel = showAllNavLabels
                     )
                 }
             }
@@ -558,6 +583,7 @@ private fun HomeScreen(
         HomePanelLayout.EXPANDED else HomePanelLayout.COVER
     var panels by remember(profile) { mutableStateOf(store.load(profile)) }
     var appDrawerOpen by rememberSaveable { mutableStateOf(false) }
+    var favoritesPickerOpen by rememberSaveable { mutableStateOf(false) }
     val unreadCount = summaries.values.sumOf { it.unreadCount }
     val recentChannels = channels.sortedWith(
         compareByDescending<ChannelEntity> { summaries[it.id]?.lastTimestamp ?: 0L }
@@ -583,17 +609,20 @@ private fun HomeScreen(
                     panels = HomePanelLayout.normalize(profile, changed)
                     store.save(profile, panels)
                 },
-                onReset = { panels = store.reset(profile) }
+                onReset = { panels = store.reset(profile) },
+                panelHeader = { id ->
+                    HomePanelFixedHeader(
+                        id = id,
+                        onFavoritesEdit = { favoritesPickerOpen = true },
+                        onAllActivity = onAllActivity,
+                        onAllChannels = onAllChannels
+                    )
+                }
             ) { id ->
                 when (id) {
                     "overview" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                "マイワークスペース",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text("未読 $unreadCount 件")
+                             Text("未読 $unreadCount 件")
                             Text("チャンネル ${channels.size} 件")
                             Text(
                                 "アプリ・チャット・通知をここからすばやく開けます。",
@@ -602,15 +631,14 @@ private fun HomeScreen(
                             )
                         }
                     }
-                    "apps" -> QuickAppsSection()
+                    "apps" -> QuickAppsSection(
+                        showHeading = false,
+                        externalPickerOpen = favoritesPickerOpen,
+                        onExternalPickerChange = { favoritesPickerOpen = it }
+                    )
                     "drawer" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(
-                                "すべてのアプリ",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Button(
+                             Button(
                                 onClick = { appDrawerOpen = true },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -622,12 +650,7 @@ private fun HomeScreen(
                     }
                     "sync" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                "同期・通知",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
+                             Text(
                                 if (syncAvailable) syncStatus else "Relay未接続（設定から接続）",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -656,8 +679,7 @@ private fun HomeScreen(
                     }
                     "activity" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            SectionHeading("最近のアクティビティ", "すべて見る", onAllActivity)
-                            if (!showActivity) {
+                             if (!showActivity) {
                                 Text("表示設定で最近の通知がオフになっています。")
                                 TextButton(onClick = { onShowActivityChange(true) }) {
                                     Text("通知パネルを表示")
@@ -681,8 +703,7 @@ private fun HomeScreen(
                     }
                     "channels" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            SectionHeading("チャンネル", "一覧へ", onAllChannels)
-                            if (!showChannels) {
+                             if (!showChannels) {
                                 Text("表示設定でチャンネルがオフになっています。")
                                 TextButton(onClick = { onShowChannelsChange(true) }) {
                                     Text("チャンネルを表示")
@@ -707,13 +728,42 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun SectionHeading(title: String, action: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        TextButton(onClick = onClick) {
-            Text(action)
-            Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+private fun HomePanelFixedHeader(
+    id: String,
+    onFavoritesEdit: () -> Unit,
+    onAllActivity: () -> Unit,
+    onAllChannels: () -> Unit
+) {
+    val spec = HomePanelHeaders.spec(id)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            spec.title,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        val action = when (id) {
+            "apps" -> onFavoritesEdit
+            "activity" -> onAllActivity
+            "channels" -> onAllChannels
+            else -> null
+        }
+        if (action != null) {
+            IconButton(
+                modifier = Modifier.size(48.dp),
+                onClick = action
+            ) {
+                Icon(
+                    if (id == "apps") Icons.Default.Add else Icons.Default.ArrowForward,
+                    contentDescription = spec.actionLabel
+                )
+            }
         }
     }
 }
