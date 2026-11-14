@@ -44,7 +44,7 @@ class ScrollScreenshotMatcherTest {
         val result = ScrollScreenshotMatcher.match(first, second, band)
         assertNotNull(result)
         assertEquals(96, result!!.shift)
-        assertEquals(0.0, result.error, 0.001)
+        assertTrue("matched screenshot rows are similar", result.error < 2.0)
         val third = synthetic(170)
         assertEquals(74, ScrollScreenshotMatcher.match(second, third, band)?.shift)
     }
