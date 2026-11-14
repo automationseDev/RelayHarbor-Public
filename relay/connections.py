@@ -13,6 +13,7 @@ import time
 import uuid
 
 import rss
+import website_monitor
 import image_metadata
 import slack_adapter
 from typing import Literal
@@ -70,20 +71,23 @@ def _public(row):
         "min_score": row["min_score"],
         "keyword": row["keyword"],
         "created_at": row["created_at"],
-        "path": "/v1/inbound/" + row["id"] if row["provider"] != "rss" else "",
+        "path": "/v1/inbound/" + row["id"] if row["provider"] not in ("rss", "website") else "",
     }
     if row["provider"] == "rss":
         result.update(rss.public_source(row["id"]))
+    if row["provider"] == "website":
+        result.update(website_monitor.public_source(row["id"]))
     return result
 
 
 class ConnectionCreate(BaseModel):
     name: str = Field(min_length=1, max_length=60)
-    provider: Literal["webhook", "github_actions", "rss"] = "webhook"
+    provider: Literal["webhook", "github_actions", "rss", "website"] = "webhook"
     channel_name: str = Field(min_length=1, max_length=60)
     min_score: int = Field(default=0, ge=0, le=100)
     keyword: str = Field(default="", max_length=100)
     feed_url: str | None = Field(default=None, max_length=2048)
+    css_selector: str = Field(default="", max_length=200)
     poll_interval_minutes: int = Field(default=30, ge=15, le=1440)
 
 
@@ -94,6 +98,7 @@ class ConnectionUpdate(BaseModel):
     min_score: int | None = Field(default=None, ge=0, le=100)
     keyword: str | None = Field(default=None, max_length=100)
     feed_url: str | None = Field(default=None, max_length=2048)
+    css_selector: str | None = Field(default=None, max_length=200)
     poll_interval_minutes: int | None = Field(default=None, ge=15, le=1440)
 
 
@@ -114,19 +119,24 @@ def create_connection(
     channel_name = payload.channel_name.strip()
     if not name or not channel_name:
         raise HTTPException(status_code=422, detail="Name and channel are required")
-    if payload.provider == "rss":
+    if payload.provider in ("rss", "website"):
         if payload.feed_url is None:
-            raise HTTPException(status_code=422, detail="RSS URL is required")
+            raise HTTPException(status_code=422, detail="RSS/website URL is required")
         if payload.min_score:
-            raise HTTPException(status_code=422, detail="RSS articles do not have scores")
+            raise HTTPException(status_code=422, detail="Pull-based sources do not have scores")
         try:
-            rss_url = rss.validate_url(payload.feed_url)
+            source_url = (rss.validate_url(payload.feed_url) if payload.provider == "rss"
+                          else website_monitor.validate_url(payload.feed_url))
+            if payload.provider == "website":
+                website_monitor.validate_selector(payload.css_selector)
+            elif payload.css_selector:
+                raise ValueError("CSS selector applies only to website monitoring")
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None
-    elif payload.feed_url is not None:
-        raise HTTPException(status_code=422, detail="Feed URL applies only to RSS")
+    elif payload.feed_url is not None or payload.css_selector:
+        raise HTTPException(status_code=422, detail="URL/selector applies only to RSS or websites")
     connection_id = secrets.token_hex(12)
-    secret = secrets.token_urlsafe(48) if payload.provider != "rss" else None
+    secret = secrets.token_urlsafe(48) if payload.provider not in ("rss", "website") else None
     with _server().connection() as db:
         try:
             db.execute(
@@ -139,7 +149,12 @@ def create_connection(
                  payload.min_score, payload.keyword.strip(), int(time.time() * 1000))
             )
             if payload.provider == "rss":
-                rss.create_source(db, connection_id, rss_url, payload.poll_interval_minutes)
+                rss.create_source(db, connection_id, source_url, payload.poll_interval_minutes)
+            elif payload.provider == "website":
+                website_monitor.create_source(
+                    db, connection_id, source_url, payload.poll_interval_minutes,
+                    payload.css_selector
+                )
             db.commit()
         except ValueError as exc:
             db.rollback()
@@ -172,19 +187,28 @@ def update_connection(
     if "enabled" in changes:
         changes["enabled"] = int(changes["enabled"])
     feed_url = changes.pop("feed_url", None)
+    selector = changes.pop("css_selector", None)
     interval = changes.pop("poll_interval_minutes", None)
     allowed = {"name", "channel_name", "enabled", "min_score", "keyword"}
     if set(changes) - allowed:
         raise HTTPException(status_code=400, detail="Unsupported field")
     with _server().connection() as db:
         row = _find(db, connection_id)
-        if row["provider"] != "rss" and (feed_url is not None or interval is not None):
-            raise HTTPException(status_code=422, detail="RSS fields only apply to RSS")
-        if row["provider"] == "rss" and changes.get("min_score", 0) != 0:
-            raise HTTPException(status_code=422, detail="RSS articles do not have scores")
+        if row["provider"] not in ("rss", "website") and (
+            feed_url is not None or interval is not None or selector is not None
+        ):
+            raise HTTPException(status_code=422, detail="Pull source fields require RSS/website")
+        if row["provider"] == "rss" and selector is not None:
+            raise HTTPException(status_code=422, detail="CSS selector requires website provider")
+        if row["provider"] in ("rss", "website") and changes.get("min_score", 0) != 0:
+            raise HTTPException(status_code=422, detail="Pull-based sources do not have scores")
         try:
             if row["provider"] == "rss" and (feed_url is not None or interval is not None):
                 rss.update_source(db, connection_id, feed_url, interval)
+            if row["provider"] == "website" and (
+                feed_url is not None or interval is not None or selector is not None
+            ):
+                website_monitor.update_source(db, connection_id, feed_url, interval, selector)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None
         if changes:
@@ -205,8 +229,8 @@ def rotate_connection(
     secret = secrets.token_urlsafe(48)
     with _server().connection() as db:
         row = _find(db, connection_id)
-        if row["provider"] == "rss":
-            raise HTTPException(status_code=400, detail="RSS sources do not use inbound tokens")
+        if row["provider"] in ("rss", "website"):
+            raise HTTPException(status_code=400, detail="Pull sources do not use inbound tokens")
         db.execute(
             "UPDATE connections SET secret_hash = ? WHERE id = ?",
             (hashlib.sha256(secret.encode()).hexdigest(), connection_id)
@@ -224,6 +248,7 @@ def delete_connection(
         _find(db, connection_id)
         db.execute("DELETE FROM rss_seen WHERE connection_id = ?", (connection_id,))
         db.execute("DELETE FROM rss_sources WHERE connection_id = ?", (connection_id,))
+        db.execute("DELETE FROM website_sources WHERE connection_id = ?", (connection_id,))
         db.execute("DELETE FROM connections WHERE id = ?", (connection_id,))
         db.commit()
     return None
@@ -261,8 +286,8 @@ async def inbound(
     server = _server()
     with server.connection() as db:
         row = _find(db, connection_id)
-        if row["provider"] == "rss":
-            raise HTTPException(status_code=404, detail="RSS sources do not accept webhooks")
+        if row["provider"] in ("rss", "website"):
+            raise HTTPException(status_code=404, detail="Pull sources do not accept webhooks")
         candidate = (authorization or "")
         if not candidate.startswith("Bearer ") or not hmac.compare_digest(
             hashlib.sha256(candidate[7:].encode()).hexdigest(), row["secret_hash"]
