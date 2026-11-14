@@ -174,10 +174,10 @@ async def _check_public_dns(url: str):
         raise ValueError("RSS hostname resolves to a non-public IP address")
 
 
-async def _download(url, etag="", modified=""):
+async def _download(url, etag="", modified="", *, accept=None, user_agent=None):
     headers = {
-        "User-Agent": "RelayHarbor-RSS/0.5 (+feed reader)",
-        "Accept": "application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
+        "User-Agent": user_agent or "RelayHarbor-RSS/0.5 (+feed reader)",
+        "Accept": accept or "application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
     }
     if etag:
         headers["If-None-Match"] = etag[:500]
