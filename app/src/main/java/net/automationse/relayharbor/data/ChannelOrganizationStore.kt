@@ -21,6 +21,16 @@ class ChannelOrganizationStore(context: Context) {
         prefs.getString("emoji_$id", "").orEmpty().ifBlank { original }
 
     fun folder(id: Long): String = prefs.getString("folder_$id", "").orEmpty()
+    fun topic(id: Long): String = prefs.getString("topic_$id", "").orEmpty()
+    fun description(id: Long): String = prefs.getString("description_$id", "").orEmpty()
+
+    fun saveDetails(id: Long, topic: String, description: String) {
+        if (id <= 0) return
+        prefs.edit()
+            .putString("topic_$id", topic.trim().take(100))
+            .putString("description_$id", description.trim().take(500))
+            .apply()
+    }
 
     fun present(channel: ChannelEntity): ChannelEntity =
         channel.copy(
@@ -82,7 +92,8 @@ class ChannelOrganizationStore(context: Context) {
 
     fun clearChannel(id: Long) {
         if (id <= 0) return
-        prefs.edit().remove("label_$id").remove("emoji_$id").remove("folder_$id").apply()
+        prefs.edit().remove("label_$id").remove("emoji_$id").remove("folder_$id")
+            .remove("topic_$id").remove("description_$id").apply()
     }
 }
 

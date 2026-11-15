@@ -34,7 +34,7 @@ data class ChannelEntity(
         childColumns = ["channelId"],
         onDelete = ForeignKey.CASCADE
     )],
-    indices = [Index("channelId")]
+    indices = [Index("channelId"), Index("parentMessageId")]
 )
 data class MessageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -49,7 +49,23 @@ data class MessageEntity(
     @ColumnInfo(defaultValue = "0") val isPinned: Boolean = false,
     @ColumnInfo(defaultValue = "0") val savedForLater: Boolean = false,
     @ColumnInfo(defaultValue = "0") val isDone: Boolean = false,
-    @ColumnInfo(defaultValue = "''") val sourcePackage: String = ""
+    @ColumnInfo(defaultValue = "''") val sourcePackage: String = "",
+    @ColumnInfo(defaultValue = "NULL") val parentMessageId: Long? = null
+)
+
+@Entity(
+    tableName = "message_reactions",
+    primaryKeys = ["messageId", "emoji"],
+    foreignKeys = [ForeignKey(
+        entity = MessageEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["messageId"],
+        onDelete = ForeignKey.CASCADE
+    )]
+)
+data class MessageReactionEntity(
+    val messageId: Long,
+    val emoji: String
 )
 
 data class ChannelSummary(
@@ -69,6 +85,45 @@ data class InboundEventEntity(
 
 @Dao
 interface HubDao {
+    @Query("""
+        SELECT r.* FROM message_reactions r
+        INNER JOIN messages m ON m.id = r.messageId
+        WHERE m.channelId = :channelId
+        ORDER BY r.messageId, r.emoji
+    """)
+    fun observeReactions(channelId: Long): Flow<List<MessageReactionEntity>>
+
+    @Query("SELECT * FROM messages WHERE id = :id LIMIT 1")
+    suspend fun messageById(id: Long): MessageEntity?
+
+    @Query("SELECT COUNT(*) FROM messages WHERE parentMessageId = :id")
+    suspend fun replyCount(id: Long): Int
+
+    @Query("SELECT COUNT(*) FROM message_reactions WHERE messageId = :messageId AND emoji = :emoji")
+    suspend fun hasReaction(messageId: Long, emoji: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun addReaction(reaction: MessageReactionEntity)
+
+    @Query("DELETE FROM message_reactions WHERE messageId = :messageId AND emoji = :emoji")
+    suspend fun removeReaction(messageId: Long, emoji: String)
+
+    @Transaction
+    suspend fun toggleLocalReaction(messageId: Long, emoji: String) {
+        if (messageById(messageId) == null) return
+        if (hasReaction(messageId, emoji) > 0) removeReaction(messageId, emoji)
+        else addReaction(MessageReactionEntity(messageId, emoji))
+    }
+
+    @Query("UPDATE messages SET text = :body WHERE id = :id AND fromMe = 1 AND kind = 'text'")
+    suspend fun editOwnMessage(id: Long, body: String): Int
+
+    @Query("""
+        DELETE FROM messages WHERE id = :id AND fromMe = 1 AND kind = 'text'
+          AND NOT EXISTS (SELECT 1 FROM messages child WHERE child.parentMessageId = :id)
+    """)
+    suspend fun deleteOwnMessage(id: Long): Int
+
     @Query("SELECT * FROM channels ORDER BY position, id")
     fun observeChannels(): Flow<List<ChannelEntity>>
 
@@ -153,8 +208,8 @@ interface HubDao {
 }
 
 @Database(
-    entities = [ChannelEntity::class, MessageEntity::class, InboundEventEntity::class],
-    version = 4, exportSchema = true
+    entities = [ChannelEntity::class, MessageEntity::class, InboundEventEntity::class, MessageReactionEntity::class],
+    version = 5, exportSchema = true
 )
 abstract class HubDatabase : RoomDatabase() {
     abstract fun dao(): HubDao
@@ -188,12 +243,28 @@ abstract class HubDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN parentMessageId INTEGER DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_parentMessageId ON messages (parentMessageId)")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS message_reactions (
+                        messageId INTEGER NOT NULL,
+                        emoji TEXT NOT NULL,
+                        PRIMARY KEY(messageId, emoji),
+                        FOREIGN KEY(messageId) REFERENCES messages(id)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+            }
+        }
+
         fun get(context: Context): HubDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 HubDatabase::class.java,
                 "relayharbor.db"
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build().also { instance = it }
         }
     }

@@ -13,6 +13,7 @@ import androidx.lifecycle.viewModelScope
 import net.automationse.relayharbor.data.ChannelEntity
 import net.automationse.relayharbor.data.ChannelSummary
 import net.automationse.relayharbor.data.MessageEntity
+import net.automationse.relayharbor.data.MessageReactionEntity
 import net.automationse.relayharbor.data.NotificationAction
 import net.automationse.relayharbor.data.ConnectionSettings
 import net.automationse.relayharbor.data.ConnectionStore
@@ -91,6 +92,39 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     val messages = currentChannel.flatMapLatest { id ->
         if (id == null) flowOf(emptyList()) else repository.messages(id)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val reactions = currentChannel.flatMapLatest { id ->
+        if (id == null) flowOf(emptyList()) else repository.reactions(id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList<MessageReactionEntity>())
+
+    fun sendThreadReply(parentId: Long, body: String) {
+        val channelId = currentChannel.value ?: return
+        viewModelScope.launch {
+            if (!repository.sendThreadReply(channelId, parentId, body)) {
+                aiError.value = "返信先が見つかりません。チャンネルを開き直してください"
+            }
+        }
+    }
+
+    fun toggleReaction(messageId: Long, emoji: String) {
+        viewModelScope.launch { repository.toggleReaction(messageId, emoji) }
+    }
+
+    fun editOwnMessage(messageId: Long, body: String) {
+        viewModelScope.launch {
+            if (!repository.editOwnMessage(messageId, body)) {
+                aiError.value = "メッセージを編集できませんでした"
+            }
+        }
+    }
+
+    fun deleteOwnMessage(messageId: Long) {
+        viewModelScope.launch {
+            if (!repository.deleteOwnMessage(messageId)) {
+                aiError.value = "返信があるメッセージは削除できません"
+            }
+        }
+    }
 
     val connectionSettings = connectionStore.settings.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), ConnectionSettings()

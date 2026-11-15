@@ -19,6 +19,31 @@ class HubRepository(private val dao: HubDao) {
     val channelSummaries: Flow<List<ChannelSummary>> = dao.observeChannelSummaries()
     val activity: Flow<List<MessageEntity>> = dao.observeActivity()
     fun messages(channelId: Long): Flow<List<MessageEntity>> = dao.observeMessages(channelId)
+    fun reactions(channelId: Long): Flow<List<MessageReactionEntity>> = dao.observeReactions(channelId)
+
+    suspend fun sendThreadReply(channelId: Long, parentId: Long, body: String): Boolean {
+        val parent = dao.messageById(parentId) ?: return false
+        val cleaned = ChatConversationRules.cleanBody(body)
+        if (parent.channelId != channelId || parent.parentMessageId != null ||
+            cleaned.isEmpty()) return false
+        dao.insertMessage(MessageEntity(
+            channelId = channelId, sender = "自分", text = cleaned,
+            fromMe = true, parentMessageId = parentId
+        ))
+        return true
+    }
+
+    suspend fun toggleReaction(messageId: Long, emoji: String) {
+        if (ChatConversationRules.validReaction(emoji)) dao.toggleLocalReaction(messageId, emoji)
+    }
+
+    suspend fun editOwnMessage(messageId: Long, body: String): Boolean {
+        val cleaned = ChatConversationRules.cleanBody(body)
+        return cleaned.isNotEmpty() && dao.editOwnMessage(messageId, cleaned) > 0
+    }
+
+    suspend fun deleteOwnMessage(messageId: Long): Boolean =
+        dao.deleteOwnMessage(messageId) > 0
     suspend fun searchAllMessages(query: String): List<MessageEntity> {
         val term = query.trim().take(100)
         if (term.length < 2) return emptyList()
