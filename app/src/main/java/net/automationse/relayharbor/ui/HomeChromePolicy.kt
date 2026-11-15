@@ -3,14 +3,18 @@ package net.automationse.relayharbor.ui
 /** The title and quick action are part of each Home panel's non-scrolling chrome. */
 internal data class HomePanelHeaderSpec(
     val title: String,
-    val actionLabel: String? = null
+    val actionLabel: String? = null,
+    val allAppsActionLabel: String? = null
 )
 
 internal object HomePanelHeaders {
     fun spec(id: String): HomePanelHeaderSpec = when (id) {
         "overview" -> HomePanelHeaderSpec("マイワークスペース")
-        "apps" -> HomePanelHeaderSpec("お気に入りアプリ", "追加・編集")
-        "drawer" -> HomePanelHeaderSpec("すべてのアプリ")
+        "apps" -> HomePanelHeaderSpec(
+            title = "お気に入りアプリ",
+            actionLabel = "追加・編集",
+            allAppsActionLabel = "すべてのアプリ"
+        )
         "sync" -> HomePanelHeaderSpec("同期・通知")
         "activity" -> HomePanelHeaderSpec("最近のアクティビティ", "すべて見る")
         "channels" -> HomePanelHeaderSpec("チャンネル", "一覧へ")
