@@ -55,7 +55,9 @@ class ResponsiveUiPolicyTest {
             HomePanel("channels", 4, 3)
         )
         val packed = HomePanelLayout.packedVisible(HomePanelLayout.EXPANDED, layout)
-        assertEquals(listOf("overview", "apps", "drawer", "sync"), packed.take(4).map { it.id })
+        assertEquals(listOf("overview", "apps", "sync", "activity"), packed.take(4).map { it.id })
+        assertFalse("Legacy all-apps card should no longer occupy grid space",
+            packed.any { it.id == "drawer" })
         assertEquals(HomePanelLayout.normalize(HomePanelLayout.EXPANDED, layout).count { it.visible }, packed.size)
         assertEquals(packed.map { it.id }.toSet().size, packed.size)
         assertTrue(packed.all { it.span in 1..4 })
