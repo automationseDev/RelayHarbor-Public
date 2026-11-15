@@ -149,6 +149,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     val notificationTarget by NotificationOpenRequests.channelId.collectAsState()
     val floatingTarget by FloatingNavigationRequests.page.collectAsState()
     val messages by vm.messages.collectAsState()
+    val reactions by vm.reactions.collectAsState()
     val settings by vm.connectionSettings.collectAsState()
     val saveError by vm.saveError.collectAsState()
     val tokenConfigured by vm.tokenConfigured.collectAsState()
@@ -420,6 +421,17 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                                         channelId = channel.id,
                                         name = channel.name,
                                         messages = messages,
+                                        reactions = reactions,
+                                        channelTopic = organization.topic(channel.id),
+                                        channelDescription = organization.description(channel.id),
+                                        onSaveChannelDetails = { topic, description ->
+                                            organization.saveDetails(channel.id, topic, description)
+                                            organizationRevision++
+                                        },
+                                        onSendThreadReply = vm::sendThreadReply,
+                                        onToggleReaction = vm::toggleReaction,
+                                        onEditMessage = vm::editOwnMessage,
+                                        onDeleteMessage = vm::deleteOwnMessage,
                                         onBack = vm::leaveChannel,
                                         onSend = vm::sendMessage,
                                         onDemo = vm::addDemoCard,
@@ -486,6 +498,17 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         channelId = chatId,
                         name = channel?.name ?: "チャット",
                         messages = messages,
+                        reactions = reactions,
+                        channelTopic = organization.topic(chatId),
+                        channelDescription = organization.description(chatId),
+                        onSaveChannelDetails = { topic, description ->
+                            organization.saveDetails(chatId, topic, description)
+                            organizationRevision++
+                        },
+                        onSendThreadReply = vm::sendThreadReply,
+                        onToggleReaction = vm::toggleReaction,
+                        onEditMessage = vm::editOwnMessage,
+                        onDeleteMessage = vm::deleteOwnMessage,
                         onBack = ::closeChat,
                         onSend = vm::sendMessage,
                         onDemo = vm::addDemoCard,
