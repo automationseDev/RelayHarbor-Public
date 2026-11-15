@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.text.format.DateFormat
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -97,6 +98,7 @@ fun ChatScreen(
     val context = LocalContext.current
     val draftStore = remember(context) { ChatDraftStore(context) }
     var activeThreadId by rememberSaveable(channelId) { mutableStateOf<Long?>(null) }
+    BackHandler(enabled = activeThreadId != null) { activeThreadId = null }
     val threadRoot = activeThreadId?.let { id ->
         messages.firstOrNull { it.id == id && it.parentMessageId == null }
     }

@@ -127,7 +127,7 @@ interface HubDao {
     @Query("SELECT * FROM channels ORDER BY position, id")
     fun observeChannels(): Flow<List<ChannelEntity>>
 
-    @Query("SELECT * FROM messages WHERE channelId = :channelId ORDER BY timestamp DESC, id DESC LIMIT 14")
+    @Query("SELECT * FROM messages WHERE channelId = :channelId AND parentMessageId IS NULL ORDER BY timestamp DESC, id DESC LIMIT 14")
     suspend fun recentMessages(channelId: Long): List<MessageEntity>
 
     @Query("SELECT * FROM messages WHERE channelId = :channelId ORDER BY timestamp, id")
