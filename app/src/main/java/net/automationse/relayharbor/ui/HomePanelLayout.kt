@@ -36,12 +36,12 @@ internal object HomePanelLayout {
     }
     fun isNative(id: String): Boolean = nativeWidgetId(id) != null
     val miniWidgetIds = setOf("clock", "date", "weather", "agenda", "battery")
-    val panelIds = listOf("overview", "apps", "drawer", "sync", "activity", "channels",
+    // Legacy "drawer" card was folded into the favorites header; old saved layouts are normalized.
+    val panelIds = listOf("overview", "apps", "sync", "activity", "channels",
         "clock", "weather", "date", "battery", "agenda")
     val titles = mapOf(
         "overview" to "ワークスペース",
         "apps" to "お気に入りアプリ",
-        "drawer" to "アプリ一覧",
         "sync" to "同期・通知",
         "activity" to "最近の通知",
         "channels" to "チャットチャンネル",
@@ -57,7 +57,6 @@ internal object HomePanelLayout {
         val wide = profile == EXPANDED
         return listOf(
             HomePanel("overview", if (wide) 2 else 2, 1),
-            HomePanel("drawer", if (wide) 2 else 2, 1),
             HomePanel("apps", if (wide) 4 else 2, 3),
             HomePanel("sync", if (wide) 2 else 2, 2),
             HomePanel("activity", if (wide) 2 else 2, 3),
@@ -105,10 +104,10 @@ internal object HomePanelLayout {
         val wide = profile == EXPANDED
         val order = when (preset) {
             PRESET_INFORMATION -> listOf("clock", "weather", "agenda", "date", "battery",
-                "channels", "drawer", "apps", "activity", "sync", "overview")
+                "channels", "apps", "activity", "sync", "overview")
             PRESET_NOTIFICATIONS -> listOf("channels", "activity", "clock", "weather",
-                "apps", "drawer", "agenda", "battery", "date", "sync", "overview")
-            else -> listOf("clock", "weather", "channels", "drawer", "apps",
+                "apps", "agenda", "battery", "date", "sync", "overview")
+            else -> listOf("clock", "weather", "channels", "apps",
                 "agenda", "activity", "battery", "date", "sync", "overview")
         }
         val original = default(profile).associateBy { it.id }
@@ -120,7 +119,6 @@ internal object HomePanelLayout {
                     else -> if (wide) 2 else 1
                 }
                 "clock", "weather", "agenda" -> if (wide) 2 else 1
-                "drawer" -> if (wide) 2 else 1
                 "sync" -> if (wide) 2 else 1
                 else -> 1
             }
