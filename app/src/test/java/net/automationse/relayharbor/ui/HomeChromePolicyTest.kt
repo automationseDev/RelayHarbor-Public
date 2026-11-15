@@ -17,11 +17,21 @@ class HomeChromePolicyTest {
 
     @Test fun onlyInteractiveSectionsHaveHeaderActions() {
         assertEquals("追加・編集", HomePanelHeaders.spec("apps").actionLabel)
+        assertEquals("すべてのアプリ", HomePanelHeaders.spec("apps").allAppsActionLabel)
         assertEquals("すべて見る", HomePanelHeaders.spec("activity").actionLabel)
         assertEquals("一覧へ", HomePanelHeaders.spec("channels").actionLabel)
-        listOf("overview", "drawer", "sync").forEach {
+        listOf("overview", "sync").forEach {
             assertEquals(null, HomePanelHeaders.spec(it).actionLabel)
         }
+    }
+
+    @Test fun allAppsShortcutIsExclusiveToFavoritesHeader() {
+        HomePanelLayout.panelIds.filterNot { it == "apps" }.forEach { id ->
+            assertEquals("Unexpected all apps action in $id",
+                null, HomePanelHeaders.spec(id).allAppsActionLabel)
+        }
+        assertFalse("Standalone drawer card must not remain",
+            "drawer" in HomePanelLayout.panelIds)
     }
 
     @Test fun sixTabsUseSelectedOnlyLabelsOnNarrowScreensOrLargeText() {
