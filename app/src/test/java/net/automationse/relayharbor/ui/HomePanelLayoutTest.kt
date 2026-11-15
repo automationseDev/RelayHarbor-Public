@@ -17,6 +17,32 @@ class HomePanelLayoutTest {
         assertTrue(expanded.all { it.span in 1..4 })
     }
 
+    @Test fun legacyStandaloneAllAppsCardIsMigratedWithoutLosingFavoriteSettings() {
+        val oldJson = """[
+            {"id":"overview","span":2,"height":1,"visible":true},
+            {"id":"drawer","span":2,"height":1,"visible":true},
+            {"id":"apps","span":1,"height":5,"visible":true,"manualHeight":true},
+            {"id":"sync","span":1,"height":2,"visible":false}
+        ]"""
+        listOf(HomePanelLayout.COVER, HomePanelLayout.EXPANDED).forEach { profile ->
+            val restored = HomePanelLayout.decode(profile, oldJson)
+            assertFalse(restored.any { it.id == "drawer" })
+            assertEquals(HomePanelLayout.panelIds.toSet(), restored.map { it.id }.toSet())
+            val favorite = restored.single { it.id == "apps" }
+            assertTrue(favorite.visible)
+            assertEquals(1, favorite.span)
+            assertEquals(5, favorite.height)
+            assertTrue(favorite.manualHeight)
+            assertFalse(restored.single { it.id == "sync" }.visible)
+            val roundTrip = HomePanelLayout.decode(
+                profile, HomePanelLayout.encode(profile, restored)
+            )
+            assertEquals(restored, roundTrip)
+            assertFalse(HomePanelLayout.preset(profile, HomePanelLayout.PRESET_BALANCED)
+                .any { it.id == "drawer" })
+        }
+    }
+
     @Test fun dragMoveReordersWithoutLosingOrDuplicatingPanels() {
         val start = HomePanelLayout.default(HomePanelLayout.COVER)
         val changed = HomePanelLayout.move(HomePanelLayout.COVER, start, "apps", "overview")

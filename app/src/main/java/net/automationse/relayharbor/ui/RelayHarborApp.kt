@@ -803,6 +803,7 @@ private fun HomeScreen(
                     HomePanelFixedHeader(
                         id = id,
                         onFavoritesEdit = { favoritesPickerOpen = true },
+                        onAllApps = { appDrawerOpen = true },
                         onAllActivity = onAllActivity,
                         onAllChannels = onAllChannels
                     )
@@ -831,18 +832,6 @@ private fun HomeScreen(
                         externalPickerOpen = favoritesPickerOpen,
                         onExternalPickerChange = { favoritesPickerOpen = it }
                     )
-                    id == "drawer" -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                             Button(
-                                onClick = { appDrawerOpen = true },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Apps, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("アプリ一覧を開く")
-                            }
-                        }
-                    }
                     id == "sync" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                              Text(
@@ -932,6 +921,7 @@ private fun HomeScreen(
 private fun HomePanelFixedHeader(
     id: String,
     onFavoritesEdit: () -> Unit,
+    onAllApps: () -> Unit,
     onAllActivity: () -> Unit,
     onAllChannels: () -> Unit
 ) {
@@ -971,6 +961,18 @@ private fun HomePanelFixedHeader(
                 Icon(
                     if (id == "apps") Icons.Default.Add else Icons.Default.ArrowForward,
                     contentDescription = spec.actionLabel
+                )
+            }
+        }
+        // The all-apps launcher sits next to the existing add/edit control.
+        if (spec.allAppsActionLabel != null) {
+            IconButton(
+                modifier = Modifier.size(48.dp),
+                onClick = onAllApps
+            ) {
+                Icon(
+                    Icons.Default.Apps,
+                    contentDescription = spec.allAppsActionLabel
                 )
             }
         }
