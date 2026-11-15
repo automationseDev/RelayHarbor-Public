@@ -37,3 +37,14 @@ Notes: the Home customizer is **not** an Android AppWidget host yet; third-party
 - Check Android CI, Relay API Tests, Public Privacy Preflight before release.
 - Test on an actual Fold in cover/open modes, switching screens, tapping cards, resizing near grid edges, drag/drop with scrolling, restoring hidden cards, app favorite picker, and returning to original HOME role.
 - Manual test the wizard with real RSS/Webhook; test notification is a server-side test event, not verification of external sender configuration.
+
+
+## v0.10.3 — All apps moved to favorites header
+
+In the Home dashboard, the **お気に入りアプリ** card's persistent header now has two actions on the right:
+- **＋**: open the existing favorites app selection/editing UI.
+- **アプリ一覧 icon (すべてのアプリ)**: open the unchanged searchable all-apps drawer.
+
+The old independent **アプリ一覧** dashboard card is retired. It no longer appears in default layouts, saved layouts or layout presets. Existing on-device layouts with the old `drawer` panel ID are normalized on load: only that deprecated card is dropped; the other panel positions, sizes, visibility and Android native widgets are retained. Existing favorite app entries are not changed. Cover and expanded layouts both receive the new header action, which stays visible even when the favorites body is scrolled.
+
+This change only affects the Android UI. The Relay/NAS server needs no update. Confirm tap targets and title truncation on narrow Fold cover layouts after installing.
