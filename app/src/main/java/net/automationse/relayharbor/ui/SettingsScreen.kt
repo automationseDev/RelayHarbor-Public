@@ -35,6 +35,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import net.automationse.relayharbor.integration.AiProfile
+import net.automationse.relayharbor.integration.AiProfileDraft
 import net.automationse.relayharbor.data.ConnectionSettings
 import net.automationse.relayharbor.integration.RelayClient
 import net.automationse.relayharbor.integration.AppUpdater
@@ -49,6 +51,14 @@ fun SettingsScreen(
     error: String?,
     tokenConfigured: Boolean,
     syncStatus: String,
+    aiProfiles: List<AiProfile>,
+    aiProfileStatus: String,
+    aiProfileCanManage: Boolean,
+    aiProfileBusy: Boolean,
+    onRefreshAiProfiles: () -> Unit,
+    onCreateAiProfile: (AiProfileDraft) -> Unit,
+    onUpdateAiProfile: (String, AiProfileDraft) -> Unit,
+    onDeleteAiProfile: (String) -> Unit,
     onSave: (String, String, String, String) -> Unit,
     onClearToken: () -> Unit,
     onSync: () -> Unit,
@@ -151,6 +161,16 @@ fun SettingsScreen(
                     )
                 }
             }
+            AiProfilesSection(
+                profiles = aiProfiles,
+                status = aiProfileStatus,
+                canManage = aiProfileCanManage,
+                busy = aiProfileBusy,
+                onRefresh = onRefreshAiProfiles,
+                onCreate = onCreateAiProfile,
+                onUpdate = onUpdateAiProfile,
+                onDelete = onDeleteAiProfile
+            )
             HorizontalDivider()
             Text(
                 "新着メッセージ通知",
@@ -349,7 +369,7 @@ fun SettingsScreen(
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("RelayHarbor v" + AppUpdater.installedVersion(context), fontWeight = FontWeight.SemiBold)
-                    Text("AIのAPIキーはアプリではなく中継サーバーの環境変数で管理します。チャットでの送信時に選択したAIへ接続します。",
+                    Text("従来のAIキーはRelay環境変数で管理し、追加登録したキーはRelayの暗号化データベースに保存します。チャットごとにAIを選べます。",
                         style = MaterialTheme.typography.bodySmall)
                     Text("Webhook通知はサーバーに保存され、アプリ表示中は選択した同期間隔（${foregroundSyncSeconds}秒）で取得します。バックグラウンドは15分以上の定期同期を利用できます。",
                         style = MaterialTheme.typography.bodySmall)
