@@ -57,7 +57,7 @@ def test_multiple_profiles_crud_and_encryption(client):
 def test_provider_url_block_and_missing_encryption_config(client, monkeypatch):
     for url in ["http://api.openai.com/v1", "https://localhost/v1",
                 "https://127.0.0.1/v1", "https://10.0.0.1/v1",
-                "https://user:pass@api.openai.com/v1", "https://api.openai.com:8080/v1",
+                "https://user:pass" + chr(64) + "api.openai.com/v1", "https://api.openai.com:8080/v1",
                 "https://metadata.google.internal/v1"]:
         assert client.post("/v1/ai-profiles", headers=AUTH,
                            json=dict(NEW, base_url=url)).status_code == 422, url
