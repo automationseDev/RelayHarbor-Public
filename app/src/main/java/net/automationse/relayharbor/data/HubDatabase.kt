@@ -50,7 +50,8 @@ data class MessageEntity(
     @ColumnInfo(defaultValue = "0") val savedForLater: Boolean = false,
     @ColumnInfo(defaultValue = "0") val isDone: Boolean = false,
     @ColumnInfo(defaultValue = "''") val sourcePackage: String = "",
-    @ColumnInfo(defaultValue = "NULL") val parentMessageId: Long? = null
+    @ColumnInfo(defaultValue = "NULL") val parentMessageId: Long? = null,
+    @ColumnInfo(defaultValue = "''") val aiProfileId: String = ""
 )
 
 @Entity(
@@ -127,7 +128,7 @@ interface HubDao {
     @Query("SELECT * FROM channels ORDER BY position, id")
     fun observeChannels(): Flow<List<ChannelEntity>>
 
-    @Query("SELECT * FROM messages WHERE channelId = :channelId AND parentMessageId IS NULL ORDER BY timestamp DESC, id DESC LIMIT 14")
+    @Query("SELECT * FROM messages WHERE channelId = :channelId AND parentMessageId IS NULL ORDER BY timestamp DESC, id DESC LIMIT 100")
     suspend fun recentMessages(channelId: Long): List<MessageEntity>
 
     @Query("SELECT * FROM messages WHERE channelId = :channelId ORDER BY timestamp, id")
@@ -209,7 +210,7 @@ interface HubDao {
 
 @Database(
     entities = [ChannelEntity::class, MessageEntity::class, InboundEventEntity::class, MessageReactionEntity::class],
-    version = 5, exportSchema = true
+    version = 6, exportSchema = true
 )
 abstract class HubDatabase : RoomDatabase() {
     abstract fun dao(): HubDao
@@ -259,12 +260,18 @@ abstract class HubDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN aiProfileId TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): HubDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 HubDatabase::class.java,
                 "relayharbor.db"
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build().also { instance = it }
         }
     }

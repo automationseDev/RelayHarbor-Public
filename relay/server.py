@@ -251,6 +251,7 @@ def ai_profile_create(payload: AiProfileDefinition,
     return ai_profiles.create_profile(DATABASE, **payload.model_dump())
 
 
+@app.post("/v1/ai-profiles/{profile_id}/update")
 @app.patch("/v1/ai-profiles/{profile_id}")
 def ai_profile_update(profile_id: str, payload: AiProfileDefinition,
                       authorization: str | None = Header(default=None)):

@@ -42,14 +42,15 @@ class RelayClient {
         endpoint: String,
         token: String,
         route: String,
-        body: String? = null
+        body: String? = null,
+        method: String? = null
     ): String = withContext(Dispatchers.IO) {
         require(validEndpoint(endpoint)) { "HTTPSの接続先を設定してください" }
         require(token.isNotBlank()) { "接続トークンを設定してください" }
         val base = endpoint.trim().trimEnd('/')
         val url = URL(base + route)
         val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = if (body == null) "GET" else "POST"
+            requestMethod = method ?: if (body == null) "GET" else "POST"
             connectTimeout = 10000
             readTimeout = 95000
             instanceFollowRedirects = false
@@ -136,11 +137,13 @@ class RelayClient {
         provider: String,
         message: String,
         conversationId: String?,
-        history: List<RelayChatTurn>
+        history: List<RelayChatTurn>,
+        profileId: String? = null
     ): RelayChatAnswer {
-        require(provider in setOf("openai", "dify"))
+        require(provider in setOf("openai", "dify", "compatible"))
         val body = buildJsonObject {
             put("provider", provider)
+            if (!profileId.isNullOrBlank()) put("profile_id", profileId)
             put("message", message)
             put("conversation_id", conversationId ?: "")
             put("history", buildJsonArray {
