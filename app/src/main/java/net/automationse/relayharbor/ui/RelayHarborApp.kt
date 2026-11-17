@@ -149,6 +149,11 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     val notificationTarget by NotificationOpenRequests.channelId.collectAsState()
     val floatingTarget by FloatingNavigationRequests.page.collectAsState()
     val messages by vm.messages.collectAsState()
+    val aiProfiles by vm.aiProfiles.collectAsState()
+    val aiProfileStatus by vm.aiProfileStatus.collectAsState()
+    val aiProfileCanManage by vm.aiProfileCanManage.collectAsState()
+    val aiProfileBusy by vm.aiProfileBusy.collectAsState()
+    val selectedAiChoice by vm.selectedAiChoice.collectAsState()
     val reactions by vm.reactions.collectAsState()
     val settings by vm.connectionSettings.collectAsState()
     val saveError by vm.saveError.collectAsState()
@@ -228,6 +233,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     }
     LaunchedEffect(page, settings.endpoint, tokenConfigured) {
         if (page == "integrations") vm.refreshIntegrations()
+        if (page == "settings") vm.refreshAiProfiles()
     }
     val summaryById = remember(summaries) { summaries.associateBy { it.channelId } }
     val unreadCount = summaries.sumOf { it.unreadCount }
@@ -422,6 +428,11 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                                         name = channel.name,
                                         messages = messages,
                                         reactions = reactions,
+                                        aiProfiles = aiProfiles,
+                                        aiChoice = selectedAiChoice,
+                                        aiDefault = settings.aiProvider,
+                                        aiOnline = settings.mode != "local",
+                                        onChooseAi = vm::chooseAiForChannel,
                                         channelTopic = organization.topic(channel.id),
                                         channelDescription = organization.description(channel.id),
                                         onSaveChannelDetails = { topic, description ->
@@ -499,6 +510,11 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         name = channel?.name ?: "チャット",
                         messages = messages,
                         reactions = reactions,
+                        aiProfiles = aiProfiles,
+                        aiChoice = selectedAiChoice,
+                        aiDefault = settings.aiProvider,
+                        aiOnline = settings.mode != "local",
+                        onChooseAi = vm::chooseAiForChannel,
                         channelTopic = organization.topic(chatId),
                         channelDescription = organization.description(chatId),
                         onSaveChannelDetails = { topic, description ->
@@ -544,6 +560,14 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     error = saveError,
                     tokenConfigured = tokenConfigured,
                     syncStatus = syncStatus,
+                    aiProfiles = aiProfiles,
+                    aiProfileStatus = aiProfileStatus,
+                    aiProfileCanManage = aiProfileCanManage,
+                    aiProfileBusy = aiProfileBusy,
+                    onRefreshAiProfiles = vm::refreshAiProfiles,
+                    onCreateAiProfile = vm::createAiProfile,
+                    onUpdateAiProfile = vm::updateAiProfile,
+                    onDeleteAiProfile = vm::deleteAiProfile,
                     onSave = vm::saveSettings,
                     onClearToken = vm::clearToken,
                     onSync = vm::syncNow,

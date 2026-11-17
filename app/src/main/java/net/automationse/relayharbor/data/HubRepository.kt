@@ -192,17 +192,38 @@ class HubRepository(private val dao: HubDao) {
         )
     }
 
-    suspend fun chatHistory(channelId: Long): List<RelayChatTurn> =
+    /**
+     * Isolate chat context by provider. Legacy untagged history is offered only
+     * to its original env-backed provider for upgrade continuity.
+     */
+    suspend fun chatHistory(channelId: Long, profileKey: String): List<RelayChatTurn> =
         dao.recentMessages(channelId).asReversed()
-            .filter { it.kind == "text" && (it.fromMe || it.sender in setOf("Dify", "OpenAI")) }
+            .filter { message ->
+                if (message.kind != "text" || message.parentMessageId != null) false
+                else {
+                    val legacySender = when (profileKey) {
+                        "legacy:dify" -> "Dify"
+                        "legacy:openai" -> "OpenAI"
+                        else -> ""
+                    }
+                    val relevant = message.fromMe || message.sender == legacySender ||
+                        message.aiProfileId.isNotBlank()
+                    val profileMatches = message.aiProfileId == profileKey ||
+                        (legacySender.isNotBlank() && message.aiProfileId.isEmpty() &&
+                            (message.fromMe || message.sender == legacySender))
+                    relevant && profileMatches
+                }
+            }
             .takeLast(12)
             .map { RelayChatTurn(if (it.fromMe) "user" else "assistant", it.text) }
 
-    suspend fun addAiReply(channelId: Long, provider: String, message: String): Long {
+    suspend fun addAiReply(channelId: Long, label: String, message: String,
+        profileKey: String): Long {
         return dao.insertMessage(MessageEntity(
             channelId = channelId,
-            sender = if (provider == "dify") "Dify" else "OpenAI",
+            sender = label.take(80),
             text = message.take(12000),
+            aiProfileId = profileKey,
             isRead = false
         ))
     }
@@ -231,11 +252,12 @@ class HubRepository(private val dao: HubDao) {
         }
     }
 
-    suspend fun sendMessage(channelId: Long, body: String) {
+    suspend fun sendMessage(channelId: Long, body: String, profileKey: String = "") {
         val cleaned = body.trim()
         if (cleaned.isNotEmpty()) {
             dao.insertMessage(MessageEntity(
-                channelId = channelId, sender = "自分", text = cleaned, fromMe = true
+                channelId = channelId, sender = "自分", text = cleaned, fromMe = true,
+                aiProfileId = profileKey
             ))
         }
     }

@@ -6,6 +6,9 @@ RelayHarbor is a Kotlin + Jetpack Compose Android app combining Slack-style chan
 rich, JSON-driven score cards and persistent chat history. Future versions will add optional
 cloud and self-hosted (NAS/VPS) relay gateways, Dify, Webhooks, and AI providers.
 
+## v0.12.0 multiple AI providers
+Configure multiple OpenAI Responses, OpenAI-compatible or Dify profiles on your Relay gateway, with encrypted server-side API keys. Select an AI independently for each channel and keep provider-specific conversation context. Existing env-backed Dify/OpenAI settings continue to work. The updated Relay server requires the one-time private \`RELAY_AI_ENCRYPTION_KEY\` setting before creating profiles. See [multi-AI setup and migration](docs/multi-ai-profiles-v0.12.0.md).
+
 ## v0.5 RSS/Atom subscriptions
 - **連携 → RSS** adds a feed by HTTPS URL (no webhook secret / external workflow).
 - Background server polling at selectable 15/30/60/180/360/720-minute intervals, plus **今すぐ取得** for immediate refresh.

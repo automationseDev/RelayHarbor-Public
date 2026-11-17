@@ -67,6 +67,7 @@ import net.automationse.relayharbor.data.ChatConversationRules
 import net.automationse.relayharbor.data.ChatDraftStore
 import net.automationse.relayharbor.data.CardCodec
 import net.automationse.relayharbor.data.MessageEntity
+import net.automationse.relayharbor.integration.AiProfile
 import net.automationse.relayharbor.data.MessageReactionEntity
 import net.automationse.relayharbor.data.NotificationAction
 
@@ -81,6 +82,11 @@ fun ChatScreen(
     name: String,
     messages: List<MessageEntity>,
     reactions: List<MessageReactionEntity>,
+    aiProfiles: List<AiProfile>,
+    aiChoice: String,
+    aiDefault: String,
+    aiOnline: Boolean,
+    onChooseAi: (String) -> Unit,
     channelTopic: String,
     channelDescription: String,
     onSaveChannelDetails: (String, String) -> Unit,
@@ -110,6 +116,7 @@ fun ChatScreen(
     val draftKey = threadRoot?.let { -it.id } ?: channelId
     var draft by remember(draftKey) { mutableStateOf(draftStore.load(draftKey)) }
     var openAddMenu by remember { mutableStateOf(false) }
+    var aiPickerOpen by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     var selectedMessage by remember { mutableStateOf<MessageEntity?>(null) }
     var editingMessage by remember { mutableStateOf<MessageEntity?>(null) }
@@ -161,6 +168,50 @@ fun ChatScreen(
             Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
                 Column {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    if (threadRoot == null) {
+                        val displayLabel = when (aiChoice) {
+                            "off" -> "AIなし"
+                            "default" -> when (aiDefault) {
+                                "openai" -> "従来設定 · OpenAI"
+                                "dify" -> "従来設定 · Dify"
+                                else -> "AIなし（従来設定）"
+                            }
+                            "legacy:openai" -> "OpenAI（従来設定）"
+                            "legacy:dify" -> "Dify（従来設定）"
+                            else -> aiProfiles.firstOrNull { it.id == aiChoice }?.name
+                                ?: "未登録のAI（選び直してください）"
+                        }
+                        Box(Modifier.padding(horizontal = 10.dp)) {
+                            TextButton(onClick = { aiPickerOpen = true }) {
+                                Text("🤖 " + (if (aiOnline) displayLabel else "端末内モード · " + displayLabel) + " ▾",
+                                    style = MaterialTheme.typography.labelMedium)
+                            }
+                            DropdownMenu(expanded = aiPickerOpen,
+                                onDismissRequest = { aiPickerOpen = false }) {
+                                listOf(
+                                    "default" to "従来のAI設定に従う",
+                                    "off" to "このチャンネルではAIを使わない"
+                                ).forEach { (id, name) ->
+                                    DropdownMenuItem(text = { Text(name) },
+                                        onClick = { onChooseAi(id); aiPickerOpen = false })
+                                }
+                                aiProfiles.forEach { profile ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(profile.name + " · " + profile.kind +
+                                                (if (profile.model.isNotBlank())
+                                                    " · " + profile.model else ""),
+                                                maxLines = 2)
+                                        },
+                                        onClick = {
+                                            onChooseAi(profile.id)
+                                            aiPickerOpen = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
                     if (threadRoot != null) {
                         Text("スレッドへの返信はこの端末内に保存されます",
                             style = MaterialTheme.typography.labelSmall,

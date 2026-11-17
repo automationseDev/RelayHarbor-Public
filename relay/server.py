@@ -22,6 +22,7 @@ import connection_transfer
 import rss
 import website_monitor
 import image_metadata
+import ai_profiles
 from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -93,10 +94,11 @@ class ChatTurn(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    provider: Literal["dify", "openai"]
+    provider: Literal["dify", "openai", "compatible"]
     message: str = Field(min_length=1, max_length=12000)
     conversation_id: str | None = Field(default=None, max_length=160)
     history: list[ChatTurn] = Field(default_factory=list, max_length=20)
+    profile_id: str | None = Field(default=None, max_length=80)
 
 
 @app.on_event("startup")
@@ -110,6 +112,7 @@ async def setup() -> None:
     connections.initialize(DATABASE)
     rss.initialize(DATABASE)
     website_monitor.initialize(DATABASE)
+    ai_profiles.initialize(DATABASE)
     rss.start_worker()
     website_monitor.start_worker()
 
@@ -211,16 +214,110 @@ def openai_text(response: dict) -> str:
     return "\n".join(part for part in segments if part).strip()
 
 
+
+class AiProfileDefinition(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    kind: Literal["openai", "compatible", "dify"]
+    base_url: str = Field(min_length=8, max_length=512)
+    model: str = Field(default="", max_length=120)
+    api_key: str = Field(default="", max_length=512)
+
+
+def configured_profiles() -> list[dict]:
+    """Expose legacy env-backed connections without exposing their credentials."""
+    old = []
+    if OPENAI_API_KEY:
+        old.append({"id": "legacy:openai", "name": "OpenAI（従来設定）",
+                    "kind": "openai", "base_url": OPENAI_BASE_URL,
+                    "model": OPENAI_MODEL, "managed": False})
+    if DIFY_API_URL and DIFY_API_KEY:
+        old.append({"id": "legacy:dify", "name": "Dify（従来設定）",
+                    "kind": "dify", "base_url": DIFY_API_URL,
+                    "model": "", "managed": False})
+    return old
+
+
+@app.get("/v1/ai-profiles")
+def ai_profile_list(authorization: str | None = Header(default=None)):
+    authorize(authorization, CLIENT_TOKEN)
+    return {"profiles": configured_profiles() + ai_profiles.list_profiles(DATABASE),
+            "can_manage": bool(os.getenv("RELAY_AI_ENCRYPTION_KEY", ""))}
+
+
+@app.post("/v1/ai-profiles", status_code=201)
+def ai_profile_create(payload: AiProfileDefinition,
+                      authorization: str | None = Header(default=None)):
+    authorize(authorization, CLIENT_TOKEN)
+    return ai_profiles.create_profile(DATABASE, **payload.model_dump())
+
+
+@app.post("/v1/ai-profiles/{profile_id}/update")
+@app.patch("/v1/ai-profiles/{profile_id}")
+def ai_profile_update(profile_id: str, payload: AiProfileDefinition,
+                      authorization: str | None = Header(default=None)):
+    authorize(authorization, CLIENT_TOKEN)
+    if not re.fullmatch(r"[a-f0-9]{32}", profile_id):
+        raise HTTPException(status_code=404, detail="AI profile not found")
+    return ai_profiles.update_profile(DATABASE, profile_id, **payload.model_dump())
+
+
+@app.delete("/v1/ai-profiles/{profile_id}")
+def ai_profile_delete(profile_id: str, authorization: str | None = Header(default=None)):
+    authorize(authorization, CLIENT_TOKEN)
+    if not re.fullmatch(r"[a-f0-9]{32}", profile_id):
+        raise HTTPException(status_code=404, detail="AI profile not found")
+    ai_profiles.delete_profile(DATABASE, profile_id)
+    return {"deleted": True}
+
+
+def resolve_ai_profile(payload: ChatRequest) -> dict:
+    if payload.profile_id:
+        if payload.profile_id == "legacy:openai":
+            if not OPENAI_API_KEY:
+                raise HTTPException(status_code=503, detail="OpenAI is not configured on this relay")
+            return {"kind": "openai", "base_url": OPENAI_BASE_URL, "model": OPENAI_MODEL,
+                    "api_key": OPENAI_API_KEY, "name": "OpenAI"}
+        if payload.profile_id == "legacy:dify":
+            if not DIFY_API_URL or not DIFY_API_KEY:
+                raise HTTPException(status_code=503, detail="Dify is not configured on this relay")
+            return {"kind": "dify", "base_url": DIFY_API_URL,
+                    "api_key": DIFY_API_KEY, "model": "", "name": "Dify"}
+        if not re.fullmatch(r"[a-f0-9]{32}", payload.profile_id):
+            raise HTTPException(status_code=404, detail="AI profile not found")
+        profile = ai_profiles.read_profile(DATABASE, payload.profile_id)
+        ai_profiles.require_public_dns(profile["base_url"])
+        return profile
+    # Old Android versions still route through the exact original env-backed API.
+    if payload.provider == "openai":
+        return resolve_ai_profile(payload.model_copy(update={"profile_id": "legacy:openai"}))
+    if payload.provider == "dify":
+        return resolve_ai_profile(payload.model_copy(update={"profile_id": "legacy:dify"}))
+    raise HTTPException(status_code=503, detail="Select a configured AI profile")
+
+
+def compatible_text(response: dict) -> str:
+    choices = response.get("choices") or []
+    message = (choices[0].get("message") or {}) if choices else {}
+    content = message.get("content", "")
+    if isinstance(content, list):
+        return "\n".join(
+            str(item.get("text", "")) for item in content if isinstance(item, dict)
+        ).strip()
+    return content.strip() if isinstance(content, str) else ""
+
+
 @app.post("/v1/chat")
 async def chat(
     payload: ChatRequest,
     authorization: str | None = Header(default=None)
 ):
     authorize(authorization, CLIENT_TOKEN)
-    if payload.provider == "dify":
-        if not DIFY_API_URL or not DIFY_API_KEY:
-            raise HTTPException(status_code=503, detail="Dify is not configured on this relay")
-        url = DIFY_API_URL + "/chat-messages"
+    profile = resolve_ai_profile(payload)
+    kind = profile["kind"]
+    base_url = profile["base_url"].rstrip("/")
+    key = profile["api_key"]
+    if kind == "dify":
+        url = base_url + "/chat-messages"
         body = {
             "inputs": {},
             "query": payload.message,
@@ -228,20 +325,23 @@ async def chat(
             "conversation_id": payload.conversation_id or "",
             "user": DIFY_USER,
         }
-        headers = {"Authorization": "Bearer " + DIFY_API_KEY}
-    else:
-        if not OPENAI_API_KEY:
-            raise HTTPException(status_code=503, detail="OpenAI is not configured on this relay")
-        url = OPENAI_BASE_URL + "/responses"
+    elif kind == "compatible":
+        url = base_url + "/chat/completions"
         context = [{"role": turn.role, "content": turn.content}
                    for turn in payload.history[-12:]]
-        body = {"model": OPENAI_MODEL, "input": context + [
+        body = {"model": profile["model"], "messages": context + [
+            {"role": "user", "content": payload.message}
+        ], "stream": False}
+    else:
+        url = base_url + "/responses"
+        context = [{"role": turn.role, "content": turn.content}
+                   for turn in payload.history[-12:]]
+        body = {"model": profile["model"], "input": context + [
             {"role": "user", "content": payload.message}
         ], "store": False}
-        headers = {"Authorization": "Bearer " + OPENAI_API_KEY}
     try:
-        async with httpx.AsyncClient(timeout=90, follow_redirects=False) as client:
-            result = await client.post(url, headers=headers, json=body)
+        async with httpx.AsyncClient(timeout=90, follow_redirects=False, trust_env=False) as client:
+            result = await client.post(url, headers={"Authorization": "Bearer " + key}, json=body)
     except httpx.RequestError:
         raise HTTPException(status_code=502, detail="Provider network error") from None
     if result.status_code >= 400:
@@ -249,15 +349,18 @@ async def chat(
                             detail=f"Provider HTTP {result.status_code} (check relay configuration)")
     try:
         data = result.json()
-        answer = (data.get("answer", "") if payload.provider == "dify" else openai_text(data))
+        answer = (data.get("answer", "") if kind == "dify"
+                  else compatible_text(data) if kind == "compatible"
+                  else openai_text(data))
         answer = answer.strip()
         if not answer:
             raise ValueError("Empty answer")
-    except (ValueError, TypeError, AttributeError):
+    except (ValueError, TypeError, AttributeError, IndexError):
         raise HTTPException(status_code=502, detail="Provider returned no text answer") from None
     return {
         "answer": answer,
-        "provider": payload.provider,
+        "provider": kind,
+        "profile_id": payload.profile_id or "legacy:" + payload.provider,
         "conversation_id": (data.get("conversation_id") or "")
-            if payload.provider == "dify" else "",
+            if kind == "dify" else "",
     }
