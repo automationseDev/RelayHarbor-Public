@@ -124,3 +124,9 @@ The relay is **single-user**. It has no identity provider, individual accounts, 
 To update an existing Docker deployment: `git pull` from `main` **after merge**, then from `relay/` run `docker compose up -d --no-deps --build relay`. Avoid `--remove-orphans` if using a companion cloudflared container. Existing SQLite events persist in the `relay_data` named volume; back up the volume before upgrade.
 
 Tests: `PYTHONPATH=relay pytest -q relay/test_server.py relay/test_connections.py`.
+
+## v0.12 multi-AI provider profiles
+
+The Android app can create and select multiple named AI profiles from **設定 → AI接続先の管理**. Provider API keys are encrypted in the existing Relay SQLite volume using a **separate persistent Fernet key** from \`RELAY_AI_ENCRYPTION_KEY\` in private \`.env\`. Generate the value via \`python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"\`. Never commit the value or change it after profile creation; otherwise saved keys cannot be decrypted. See [multi-AI guide](../docs/multi-ai-profiles-v0.12.0.md).
+
+Types: OpenAI Responses, OpenAI-compatible chat completions, Dify blocking Chat. Existing env-configured OpenAI/Dify routes and historical Android versions remain compatible. Profiles are single-user only; never expose the authenticated administration API to unrelated users.
