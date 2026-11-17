@@ -17,11 +17,15 @@ import net.automationse.relayharbor.data.MessageReactionEntity
 import net.automationse.relayharbor.data.NotificationAction
 import net.automationse.relayharbor.data.ConnectionSettings
 import net.automationse.relayharbor.data.ConnectionStore
+import net.automationse.relayharbor.data.AiChannelSelectionStore
 import net.automationse.relayharbor.data.RelaySecretStore
 import net.automationse.relayharbor.data.RelayConversationStore
 import net.automationse.relayharbor.data.HubDatabase
 import net.automationse.relayharbor.data.HubRepository
 import net.automationse.relayharbor.integration.RelayClient
+import net.automationse.relayharbor.integration.AiProfile
+import net.automationse.relayharbor.integration.AiProfileClient
+import net.automationse.relayharbor.integration.AiProfileDraft
 import net.automationse.relayharbor.integration.IntegrationClient
 import net.automationse.relayharbor.integration.IntegrationConnection
 import net.automationse.relayharbor.integration.IntegrationCredential
@@ -52,6 +56,8 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     private val secretStore = RelaySecretStore(app)
     private val conversationStore = RelayConversationStore(app)
     private val relayClient = RelayClient()
+    private val aiProfileClient = AiProfileClient(relayClient)
+    private val aiChannelStore = AiChannelSelectionStore(app)
     private val integrationClient = IntegrationClient(relayClient)
     private val syncMutex = Mutex()
     private val currentChannel = MutableStateFlow<Long?>(null)
@@ -140,6 +146,92 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     private val pendingImportedCredentials = ArrayDeque<IntegrationCredential>()
     val busyChannelId = MutableStateFlow<Long?>(null)
     val appUpdateState = MutableStateFlow(AppUpdateState())
+    val aiProfiles = MutableStateFlow<List<AiProfile>>(emptyList())
+    val aiProfileStatus = MutableStateFlow("接続先を保存するとAI一覧を取得できます")
+    val aiProfileCanManage = MutableStateFlow(false)
+    val aiProfileBusy = MutableStateFlow(false)
+    val selectedAiChoice = MutableStateFlow("default")
+
+    fun chooseAiForChannel(choice: String) {
+        val id = currentChannel.value ?: return
+        val config = connectionSettings.value
+        aiChannelStore.set(config.endpoint, id, choice)
+        selectedAiChoice.value = choice
+    }
+
+    fun refreshAiProfiles() {
+        viewModelScope.launch {
+            try {
+                val (endpoint, token) = integrationAuth()
+                val result = aiProfileClient.list(endpoint, token)
+                // Do not display profiles fetched from a previous Relay endpoint.
+                if (connectionStore.settings.first().endpoint.trimEnd('/') != endpoint) return@launch
+                aiProfiles.value = result.profiles
+                aiProfileCanManage.value = result.canManage
+                aiProfileStatus.value = if (result.canManage)
+                    "AIプロバイダー ${result.profiles.size} 件"
+                else "登録機能を利用するにはRelayの暗号化キーを設定してください"
+            } catch (error: Exception) {
+                aiProfiles.value = emptyList()
+                aiProfileCanManage.value = false
+                aiProfileStatus.value = "AI一覧の取得に失敗：" +
+                    (error.message ?: "Relayを更新して接続設定を確認してください")
+            }
+        }
+    }
+
+    fun createAiProfile(draft: AiProfileDraft) {
+        viewModelScope.launch {
+            aiProfileBusy.value = true
+            try {
+                val (endpoint, token) = integrationAuth()
+                aiProfileClient.create(endpoint, token, draft)
+                aiProfileStatus.value = "AI接続先を追加しました"
+                refreshAiProfiles()
+            } catch (error: Exception) {
+                aiProfileStatus.value = "追加できませんでした：" + (error.message ?: "エラー")
+            } finally {
+                aiProfileBusy.value = false
+            }
+        }
+    }
+
+    fun updateAiProfile(id: String, draft: AiProfileDraft) {
+        viewModelScope.launch {
+            aiProfileBusy.value = true
+            try {
+                val (endpoint, token) = integrationAuth()
+                aiProfileClient.update(endpoint, token, id, draft)
+                aiProfileStatus.value = "AI接続先を更新しました"
+                refreshAiProfiles()
+            } catch (error: Exception) {
+                aiProfileStatus.value = "更新できませんでした：" + (error.message ?: "エラー")
+            } finally {
+                aiProfileBusy.value = false
+            }
+        }
+    }
+
+    fun deleteAiProfile(id: String) {
+        viewModelScope.launch {
+            aiProfileBusy.value = true
+            try {
+                val (endpoint, token) = integrationAuth()
+                aiProfileClient.delete(endpoint, token, id)
+                aiProfileStatus.value = "AI接続先を削除しました"
+                val channel = currentChannel.value
+                if (channel != null && aiChannelStore.get(endpoint, channel) == id) {
+                    aiChannelStore.set(endpoint, channel, "off")
+                    selectedAiChoice.value = "off"
+                }
+                refreshAiProfiles()
+            } catch (error: Exception) {
+                aiProfileStatus.value = "削除できませんでした：" + (error.message ?: "エラー")
+            } finally {
+                aiProfileBusy.value = false
+            }
+        }
+    }
 
     init {
         viewModelScope.launch { repository.bootstrap() }
@@ -148,7 +240,15 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     fun selectChannel(id: Long) {
         currentChannel.value = id
         aiError.value = null
-        viewModelScope.launch { repository.markRead(id) }
+        selectedAiChoice.value = aiChannelStore.get(connectionSettings.value.endpoint, id)
+        viewModelScope.launch {
+            repository.markRead(id)
+            val cfg = connectionStore.settings.first()
+            if (currentChannel.value == id) {
+                selectedAiChoice.value = aiChannelStore.get(cfg.endpoint, id)
+            }
+        }
+        refreshAiProfiles()
     }
 
     fun leaveChannel() {
@@ -176,9 +276,24 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         aiError.value = null
         viewModelScope.launch {
             val config = connectionStore.settings.first()
-            val history = repository.chatHistory(id)
-            repository.sendMessage(id, cleaned)
-            if (config.aiProvider == "none" || config.mode == "local") return@launch
+            val choice = aiChannelStore.get(config.endpoint, id)
+            val profile = aiProfiles.value.firstOrNull { it.id == choice }
+            val provider = when (choice) {
+                "off" -> "none"
+                "default" -> config.aiProvider
+                "legacy:openai" -> "openai"
+                "legacy:dify" -> "dify"
+                else -> profile?.kind ?: "missing"
+            }
+            val enabled = config.mode != "local" && provider != "none"
+            if (provider == "missing") {
+                aiError.value = "選択したAIが削除されたか未取得です。AIを選び直してください"
+                return@launch
+            }
+            val profileKey = if (choice == "default") "legacy:" + provider else choice
+            val history = if (enabled) repository.chatHistory(id, profileKey) else emptyList()
+            repository.sendMessage(id, cleaned, if (enabled) profileKey else "")
+            if (!enabled) return@launch
 
             val token = secretStore.getToken()
             if (!RelayClient.validEndpoint(config.endpoint) || token == null) {
@@ -187,21 +302,25 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
             }
             busyChannelId.value = id
             try {
-                val conversationId = if (config.aiProvider == "dify")
-                    conversationStore.get(config.endpoint, config.aiProvider, id) else ""
+                val conversationKey = if (choice == "default") provider else choice
+                val conversationId = if (provider == "dify")
+                    conversationStore.get(config.endpoint, conversationKey, id) else ""
                 val result = relayClient.sendChat(
-                    config.endpoint, token, config.aiProvider,
-                    cleaned, conversationId, history
+                    config.endpoint, token, provider, cleaned, conversationId, history,
+                    if (choice == "default") null else choice
                 )
-                val replyId = repository.addAiReply(id, config.aiProvider, result.answer)
+                val label = profile?.name ?: when (provider) {
+                    "dify" -> "Dify"
+                    "compatible" -> "OpenAI互換AI"
+                    else -> "OpenAI"
+                }
+                val replyId = repository.addAiReply(id, label, result.answer, profileKey)
                 if (currentChannel.value != id) {
                     val name = channels.value.firstOrNull { it.id == id }?.name ?: "AIチャット"
                     MessageNotifications.showAiReply(getApplication(), replyId, id, name, result.answer)
                 }
-                if (config.aiProvider == "dify" && result.conversationId.isNotBlank()) {
-                    conversationStore.save(
-                        config.endpoint, config.aiProvider, id, result.conversationId
-                    )
+                if (provider == "dify" && result.conversationId.isNotBlank()) {
+                    conversationStore.save(config.endpoint, conversationKey, id, result.conversationId)
                 }
                 if (currentChannel.value == id) repository.markRead(id)
             } catch (error: Exception) {
@@ -242,6 +361,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
                 if (trimmed.isNotEmpty()) secretStore.setToken(trimmed)
                 connectionStore.save(mode, endpoint, ai)
                 tokenConfigured.value = secretStore.hasToken()
+                refreshAiProfiles()
             } catch (error: Exception) {
                 saveError.value = error.message ?: "保存に失敗しました"
             }
