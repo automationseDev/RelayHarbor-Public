@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -41,6 +43,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,6 +67,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import net.automationse.relayharbor.data.ChatConversationRules
+import net.automationse.relayharbor.data.ChatProductivityRules
 import net.automationse.relayharbor.data.ChatDraftStore
 import net.automationse.relayharbor.data.CardCodec
 import net.automationse.relayharbor.data.MessageEntity
@@ -116,21 +120,35 @@ fun ChatScreen(
     val draftKey = threadRoot?.let { -it.id } ?: channelId
     var draft by remember(draftKey) { mutableStateOf(draftStore.load(draftKey)) }
     var openAddMenu by remember { mutableStateOf(false) }
+    var searchOpen by rememberSaveable(channelId) { mutableStateOf(false) }
+    var searchQuery by rememberSaveable(channelId) { mutableStateOf("") }
+    var searchFilter by rememberSaveable(channelId) { mutableStateOf("all") }
     var aiPickerOpen by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     var selectedMessage by remember { mutableStateOf<MessageEntity?>(null) }
     var editingMessage by remember { mutableStateOf<MessageEntity?>(null) }
     var deletingMessage by remember { mutableStateOf<MessageEntity?>(null) }
 
-    val visibleMessages = if (threadRoot == null) ChatConversationRules.roots(messages)
-        else listOf(threadRoot) + ChatConversationRules.thread(messages, threadRoot.id)
+    val visibleMessages = ChatProductivityRules.visible(
+        messages, threadRoot?.id, if (searchOpen) searchQuery else "",
+        if (searchOpen) searchFilter else "all"
+    )
     val listState = rememberLazyListState()
-    LaunchedEffect(visibleMessages.lastOrNull()?.id, activeThreadId) {
-        if (visibleMessages.isNotEmpty()) listState.scrollToItem(visibleMessages.lastIndex)
+    LaunchedEffect(visibleMessages.lastOrNull()?.id, activeThreadId, searchOpen, searchQuery, searchFilter) {
+        if (visibleMessages.isNotEmpty()) {
+            val filtered = searchOpen && threadRoot == null &&
+                (searchQuery.isNotBlank() || searchFilter != "all")
+            listState.scrollToItem(if (filtered) 0 else visibleMessages.lastIndex)
+        }
+    }
+    fun putDraft(value: String) {
+        draft = value.take(8000)
+        draftStore.save(draftKey, draft)
     }
 
     Scaffold(
         topBar = {
+            Column {
             TopAppBar(
                 title = {
                     Column {
@@ -157,12 +175,53 @@ fun ChatScreen(
                 },
                 actions = {
                     if (threadRoot == null) {
+                        IconButton(onClick = { searchOpen = !searchOpen }) {
+                            Icon(if (searchOpen) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription = if (searchOpen) "検索を閉じる" else "チャンネル内を検索")
+                        }
                         IconButton(onClick = { showDetails = true }) {
                             Icon(Icons.Default.Info, contentDescription = "チャンネル詳細")
                         }
                     }
                 }
             )
+            if (threadRoot == null && searchOpen) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it.take(100) },
+                    label = { Text("このチャンネルのメッセージ・返信を検索") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "検索語をクリア")
+                            }
+                        }
+                    }
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        "all" to "すべて",
+                        "unread" to "未読",
+                        "pinned" to "固定",
+                        "later" to "あとで"
+                    ).forEach { (id, label) ->
+                        FilterChip(selected = searchFilter == id,
+                            onClick = { searchFilter = id },
+                            label = { Text(label) })
+                    }
+                }
+                Text("表示 ${visibleMessages.size} 件 · 検索はこの端末内だけで実行",
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 3.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            }
         },
         bottomBar = {
             Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
@@ -241,15 +300,21 @@ fun ChatScreen(
                                         text = { Text("デモ評価カードを追加") },
                                         onClick = { openAddMenu = false; onDemo() }
                                     )
+                                    ChatProductivityRules.presets.forEach { (id, label) ->
+                                        DropdownMenuItem(
+                                            text = { Text("🤖 " + label + "の依頼文を作る") },
+                                            onClick = {
+                                                putDraft(ChatProductivityRules.preparedPrompt(id, draft))
+                                                openAddMenu = false
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
                         OutlinedTextField(
                             value = draft,
-                            onValueChange = {
-                                draft = it
-                                draftStore.save(draftKey, it)
-                            },
+                            onValueChange = ::putDraft,
                             placeholder = { Text(if (threadRoot == null) "メッセージを入力…"
                                 else "スレッドに返信…") },
                             modifier = Modifier.weight(1f),
@@ -279,7 +344,8 @@ fun ChatScreen(
     ) { inner ->
         if (visibleMessages.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.Center) {
-                Text("ここから会話を始めましょう",
+                Text(if (searchOpen && threadRoot == null) "検索条件に一致するメッセージがありません"
+                    else "ここから会話を始めましょう",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium)
             }
@@ -311,6 +377,14 @@ fun ChatScreen(
                         onOpenThread = { if (message.parentMessageId == null) activeThreadId = message.id },
                         onLongPress = { selectedMessage = message }
                     )
+                    if (searchOpen && threadRoot == null && searchQuery.isNotBlank() &&
+                        messages.any { it.parentMessageId == message.id &&
+                            ChatProductivityRules.matches(it, searchQuery.trim()) } &&
+                        !ChatProductivityRules.matches(message, searchQuery.trim())) {
+                        Text("💬 返信内に一致 · 「返信」をタップして確認",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
                     MessageEngagementBar(
                         message = message,
                         emojis = reactions.filter { it.messageId == message.id }.map { it.emoji },
@@ -364,6 +438,12 @@ fun ChatScreen(
                 context.startActivity(Intent.createChooser(send, "メッセージを共有"))
                 selectedMessage = null
             },
+            onQuickSummary = if (threadRoot == null && message.text.isNotBlank()) {
+                {
+                    putDraft(ChatProductivityRules.preparedPrompt("summary", message.text))
+                    selectedMessage = null
+                }
+            } else null,
             onEdit = { editingMessage = message; selectedMessage = null },
             onDelete = { deletingMessage = message; selectedMessage = null },
             onTogglePin = {
@@ -559,6 +639,7 @@ private fun ChatMessageOptions(
     onReact: (String) -> Unit,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onQuickSummary: (() -> Unit)?,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onTogglePin: () -> Unit
@@ -581,6 +662,11 @@ private fun ChatMessageOptions(
                 TextButton(onClick = onReply) { Text("💬 スレッドで返信") }
                 TextButton(onClick = onCopy) { Text("メッセージをコピー") }
                 TextButton(onClick = onShare) { Text("共有") }
+                if (onQuickSummary != null) {
+                    TextButton(onClick = onQuickSummary) {
+                        Text("🤖 この内容を要約する下書きを作成")
+                    }
+                }
                 if (!message.fromMe) {
                     TextButton(onClick = onTogglePin) {
                         Text(if (message.isPinned) "重要ピンを解除" else "重要に固定")
