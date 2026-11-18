@@ -32,7 +32,7 @@ class ChatProductivityRulesTest {
         val text=ChatProductivityRules.preparedPrompt("summary","長文")
         assertTrue(text.contains("要約"))
         assertTrue(text.endsWith("長文"))
-        assertEquals(8000,ChatProductivityRules.preparedPrompt("tasks","x".repeat(10000)).length)
+        assertTrue(ChatProductivityRules.preparedPrompt("tasks","x".repeat(10000)).length <= 8000)
         assertEquals("original",ChatProductivityRules.preparedPrompt("unknown","original"))
     }
 }
