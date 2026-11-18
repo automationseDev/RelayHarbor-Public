@@ -123,16 +123,33 @@ fun ChatScreen(
     var searchOpen by rememberSaveable(channelId) { mutableStateOf(false) }
     var searchQuery by rememberSaveable(channelId) { mutableStateOf("") }
     var searchFilter by rememberSaveable(channelId) { mutableStateOf("all") }
+    BackHandler(enabled = activeThreadId == null && searchOpen) { searchOpen = false }
     var aiPickerOpen by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     var selectedMessage by remember { mutableStateOf<MessageEntity?>(null) }
     var editingMessage by remember { mutableStateOf<MessageEntity?>(null) }
     var deletingMessage by remember { mutableStateOf<MessageEntity?>(null) }
 
-    val visibleMessages = ChatProductivityRules.visible(
-        messages, threadRoot?.id, if (searchOpen) searchQuery else "",
-        if (searchOpen) searchFilter else "all"
-    )
+    val visibleMessages = remember(messages, threadRoot?.id, searchOpen, searchQuery, searchFilter) {
+        ChatProductivityRules.visible(
+            messages, threadRoot?.id, if (searchOpen) searchQuery else "",
+            if (searchOpen) searchFilter else "all"
+        )
+    }
+    // Pre-computed once per Room snapshot, not for every rendered chat bubble.
+    val replyCounts = remember(messages) {
+        messages.mapNotNull { it.parentMessageId }.groupingBy { it }.eachCount()
+    }
+    val reactionGroups = remember(reactions) {
+        reactions.groupBy({ it.messageId }, { it.emoji })
+    }
+    val replySearchMatches = remember(messages, searchQuery, searchOpen) {
+        if (!searchOpen || searchQuery.isBlank()) emptySet<Long>()
+        else messages.asSequence().filter {
+            it.parentMessageId != null &&
+                ChatProductivityRules.matches(it, searchQuery.trim())
+        }.mapNotNull { it.parentMessageId }.toSet()
+    }
     val listState = rememberLazyListState()
     LaunchedEffect(visibleMessages.lastOrNull()?.id, activeThreadId, searchOpen, searchQuery, searchFilter) {
         if (visibleMessages.isNotEmpty()) {
@@ -170,7 +187,8 @@ fun ChatScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (threadRoot != null) activeThreadId = null else onBack()
+                        if (threadRoot != null) activeThreadId = null
+                        else if (searchOpen) searchOpen = false else onBack()
                     }) { Icon(Icons.Default.ArrowBack, contentDescription = "戻る") }
                 },
                 actions = {
@@ -378,8 +396,7 @@ fun ChatScreen(
                         onLongPress = { selectedMessage = message }
                     )
                     if (searchOpen && threadRoot == null && searchQuery.isNotBlank() &&
-                        messages.any { it.parentMessageId == message.id &&
-                            ChatProductivityRules.matches(it, searchQuery.trim()) } &&
+                        message.id in replySearchMatches &&
                         !ChatProductivityRules.matches(message, searchQuery.trim())) {
                         Text("💬 返信内に一致 · 「返信」をタップして確認",
                             style = MaterialTheme.typography.labelSmall,
@@ -387,9 +404,9 @@ fun ChatScreen(
                     }
                     MessageEngagementBar(
                         message = message,
-                        emojis = reactions.filter { it.messageId == message.id }.map { it.emoji },
+                        emojis = reactionGroups[message.id].orEmpty(),
                         replyCount = if (message.parentMessageId == null)
-                            messages.count { it.parentMessageId == message.id } else 0,
+                            replyCounts[message.id] ?: 0 else 0,
                         showReplyButton = threadRoot == null && message.parentMessageId == null,
                         onOpenThread = { activeThreadId = message.id },
                         onToggleReaction = { emoji -> onToggleReaction(message.id, emoji) }

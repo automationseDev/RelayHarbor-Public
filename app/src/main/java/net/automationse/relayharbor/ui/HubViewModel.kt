@@ -286,6 +286,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         busyChannelIds.value = busyChannelIds.value + id
         aiError.value = null
         viewModelScope.launch {
+            var storedLocally = false
             try {
                 val config = connectionStore.settings.first()
                 val choice = aiChannelStore.get(config.endpoint, id)
@@ -303,6 +304,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
                     else emptyList()
                 // Never silently discard text when a remote profile cannot be reached.
                 repository.sendMessage(id, cleaned, if (remoteEnabled) profileKey else "")
+                storedLocally = true
                 if (config.mode == "local" || provider == "none") return@launch
                 if (provider == "missing") {
                     if (currentChannel.value == id) {
@@ -341,8 +343,9 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
                 if (currentChannel.value == id) repository.markRead(id)
             } catch (error: Exception) {
                 if (currentChannel.value == id) {
-                    aiError.value = "文章は保存済みです。AI応答の取得に失敗しました：" +
-                        (error.message ?: "通信エラー")
+                    aiError.value = (if (storedLocally) "文章は保存済みです。AI応答の取得に失敗しました："
+                        else "文章を端末に保存できませんでした：") +
+                        (error.message ?: "エラー")
                 }
             } finally {
                 busyChannelIds.value = busyChannelIds.value - id
