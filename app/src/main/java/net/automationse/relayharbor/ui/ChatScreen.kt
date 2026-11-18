@@ -107,45 +107,49 @@ fun ChatScreen(
 ) {
     val context = LocalContext.current
     val draftStore = remember(context) { ChatDraftStore(context) }
+    // Flow can briefly retain the previous channel snapshot while switching panes.
+    val channelMessages = remember(messages, channelId) {
+        messages.filter { it.channelId == channelId }
+    }
     var activeThreadId by rememberSaveable(channelId) { mutableStateOf<Long?>(null) }
     BackHandler(enabled = activeThreadId != null) { activeThreadId = null }
     val threadRoot = activeThreadId?.let { id ->
-        messages.firstOrNull { it.id == id && it.parentMessageId == null }
+        channelMessages.firstOrNull { it.id == id && it.parentMessageId == null }
     }
-    LaunchedEffect(activeThreadId, messages.size) {
-        if (activeThreadId != null && threadRoot == null && messages.isNotEmpty()) {
+    LaunchedEffect(activeThreadId, channelMessages.size) {
+        if (activeThreadId != null && threadRoot == null && channelMessages.isNotEmpty()) {
             activeThreadId = null
         }
     }
     val draftKey = threadRoot?.let { -it.id } ?: channelId
     var draft by remember(draftKey) { mutableStateOf(draftStore.load(draftKey)) }
-    var openAddMenu by remember { mutableStateOf(false) }
+    var openAddMenu by remember(channelId) { mutableStateOf(false) }
     var searchOpen by rememberSaveable(channelId) { mutableStateOf(false) }
     var searchQuery by rememberSaveable(channelId) { mutableStateOf("") }
     var searchFilter by rememberSaveable(channelId) { mutableStateOf("all") }
     BackHandler(enabled = activeThreadId == null && searchOpen) { searchOpen = false }
-    var aiPickerOpen by remember { mutableStateOf(false) }
-    var showDetails by remember { mutableStateOf(false) }
-    var selectedMessage by remember { mutableStateOf<MessageEntity?>(null) }
-    var editingMessage by remember { mutableStateOf<MessageEntity?>(null) }
-    var deletingMessage by remember { mutableStateOf<MessageEntity?>(null) }
+    var aiPickerOpen by remember(channelId) { mutableStateOf(false) }
+    var showDetails by remember(channelId) { mutableStateOf(false) }
+    var selectedMessage by remember(channelId) { mutableStateOf<MessageEntity?>(null) }
+    var editingMessage by remember(channelId) { mutableStateOf<MessageEntity?>(null) }
+    var deletingMessage by remember(channelId) { mutableStateOf<MessageEntity?>(null) }
 
-    val visibleMessages = remember(messages, threadRoot?.id, searchOpen, searchQuery, searchFilter) {
+    val visibleMessages = remember(channelMessages, threadRoot?.id, searchOpen, searchQuery, searchFilter) {
         ChatProductivityRules.visible(
-            messages, threadRoot?.id, if (searchOpen) searchQuery else "",
+            channelMessages, threadRoot?.id, if (searchOpen) searchQuery else "",
             if (searchOpen) searchFilter else "all"
         )
     }
     // Pre-computed once per Room snapshot, not for every rendered chat bubble.
-    val replyCounts = remember(messages) {
-        messages.mapNotNull { it.parentMessageId }.groupingBy { it }.eachCount()
+    val replyCounts = remember(channelMessages) {
+        channelMessages.mapNotNull { it.parentMessageId }.groupingBy { it }.eachCount()
     }
     val reactionGroups = remember(reactions) {
         reactions.groupBy({ it.messageId }, { it.emoji })
     }
-    val replySearchMatches = remember(messages, searchQuery, searchOpen) {
+    val replySearchMatches = remember(channelMessages, searchQuery, searchOpen) {
         if (!searchOpen || searchQuery.isBlank()) emptySet<Long>()
-        else messages.asSequence().filter {
+        else channelMessages.asSequence().filter {
             it.parentMessageId != null &&
                 ChatProductivityRules.matches(it, searchQuery.trim())
         }.mapNotNull { it.parentMessageId }.toSet()
@@ -419,7 +423,7 @@ fun ChatScreen(
     if (showDetails) {
         ChannelDetailsDialog(
             channelName = name, channelId = channelId,
-            messages = messages, topic = channelTopic, description = channelDescription,
+            messages = channelMessages, topic = channelTopic, description = channelDescription,
             onSave = { topic, description ->
                 onSaveChannelDetails(topic, description)
                 showDetails = false
