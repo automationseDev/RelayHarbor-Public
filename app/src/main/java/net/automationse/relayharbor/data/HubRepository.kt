@@ -238,6 +238,13 @@ class HubRepository(private val dao: HubDao) {
     suspend fun deleteChannel(id: Long) = dao.deleteChannel(id)
     suspend fun markRead(id: Long) = dao.markRead(id)
 
+    suspend fun bulkSetRead(messageIds: List<Long>, read: Boolean) {
+        // Activity is bounded to 500 items; avoid exceeding SQLite's bind limit.
+        messageIds.filter { it > 0L }.distinct().chunked(400).forEach { ids ->
+            if (ids.isNotEmpty()) dao.setMessagesRead(ids, read)
+        }
+    }
+
     suspend fun updateNotification(messageId: Long, action: NotificationAction) {
         if (messageId <= 0) return
         when (action) {
