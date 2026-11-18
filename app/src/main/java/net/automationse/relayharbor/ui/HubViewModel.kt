@@ -144,7 +144,8 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     val newIntegrationCredential = MutableStateFlow<IntegrationCredential?>(null)
     val integrationTransferBusy = MutableStateFlow(false)
     private val pendingImportedCredentials = ArrayDeque<IntegrationCredential>()
-    val busyChannelId = MutableStateFlow<Long?>(null)
+    /** Independent in-flight state per channel prevents rapid duplicate sends. */
+    val busyChannelIds = MutableStateFlow<Set<Long>>(emptySet())
     val appUpdateState = MutableStateFlow(AppUpdateState())
     val aiProfiles = MutableStateFlow<List<AiProfile>>(emptyList())
     val aiProfileStatus = MutableStateFlow("接続先を保存するとAI一覧を取得できます")
@@ -259,6 +260,11 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repository.updateNotification(messageId, action) }
     }
 
+    fun bulkSetNotificationsRead(ids: List<Long>, read: Boolean) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch { repository.bulkSetRead(ids, read) }
+    }
+
     fun createChannel(name: String) {
         viewModelScope.launch { repository.createChannel(name) }
     }
@@ -268,40 +274,52 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repository.deleteChannel(id) }
     }
 
+    /**
+     * Preserve the user's outgoing message even if a saved AI profile was
+     * deleted or the gateway is offline. Network failures remain visible.
+     */
     fun sendMessage(body: String) {
         val id = currentChannel.value ?: return
-        if (busyChannelId.value == id) return
-        val cleaned = body.trim()
+        if (id in busyChannelIds.value) return
+        val cleaned = body.trim().take(8000)
         if (cleaned.isEmpty()) return
+        busyChannelIds.value = busyChannelIds.value + id
         aiError.value = null
         viewModelScope.launch {
-            val config = connectionStore.settings.first()
-            val choice = aiChannelStore.get(config.endpoint, id)
-            val profile = aiProfiles.value.firstOrNull { it.id == choice }
-            val provider = when (choice) {
-                "off" -> "none"
-                "default" -> config.aiProvider
-                "legacy:openai" -> "openai"
-                "legacy:dify" -> "dify"
-                else -> profile?.kind ?: "missing"
-            }
-            val enabled = config.mode != "local" && provider != "none"
-            if (provider == "missing") {
-                aiError.value = "選択したAIが削除されたか未取得です。AIを選び直してください"
-                return@launch
-            }
-            val profileKey = if (choice == "default") "legacy:" + provider else choice
-            val history = if (enabled) repository.chatHistory(id, profileKey) else emptyList()
-            repository.sendMessage(id, cleaned, if (enabled) profileKey else "")
-            if (!enabled) return@launch
-
-            val token = secretStore.getToken()
-            if (!RelayClient.validEndpoint(config.endpoint) || token == null) {
-                aiError.value = "接続先とアクセストークンを設定してください"
-                return@launch
-            }
-            busyChannelId.value = id
+            var storedLocally = false
             try {
+                val config = connectionStore.settings.first()
+                val choice = aiChannelStore.get(config.endpoint, id)
+                val profile = aiProfiles.value.firstOrNull { it.id == choice }
+                val provider = when (choice) {
+                    "off" -> "none"
+                    "default" -> config.aiProvider
+                    "legacy:openai" -> "openai"
+                    "legacy:dify" -> "dify"
+                    else -> profile?.kind ?: "missing"
+                }
+                val remoteEnabled = config.mode != "local" && provider !in setOf("none", "missing")
+                val profileKey = if (choice == "default") "legacy:" + provider else choice
+                val history = if (remoteEnabled) repository.chatHistory(id, profileKey)
+                    else emptyList()
+                // Never silently discard text when a remote profile cannot be reached.
+                repository.sendMessage(id, cleaned, if (remoteEnabled) profileKey else "")
+                storedLocally = true
+                if (config.mode == "local" || provider == "none") return@launch
+                if (provider == "missing") {
+                    if (currentChannel.value == id) {
+                        aiError.value = "文章は端末に保存しました。AI接続先を取得・選択し直してください"
+                    }
+                    return@launch
+                }
+
+                val token = secretStore.getToken()
+                if (!RelayClient.validEndpoint(config.endpoint) || token == null) {
+                    if (currentChannel.value == id) {
+                        aiError.value = "文章は保存しました。接続先とアクセストークンを確認してください"
+                    }
+                    return@launch
+                }
                 val conversationKey = if (choice == "default") provider else choice
                 val conversationId = if (provider == "dify")
                     conversationStore.get(config.endpoint, conversationKey, id) else ""
@@ -325,10 +343,12 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
                 if (currentChannel.value == id) repository.markRead(id)
             } catch (error: Exception) {
                 if (currentChannel.value == id) {
-                    aiError.value = error.message ?: "AI接続に失敗しました"
+                    aiError.value = (if (storedLocally) "文章は保存済みです。AI応答の取得に失敗しました："
+                        else "文章を端末に保存できませんでした：") +
+                        (error.message ?: "エラー")
                 }
             } finally {
-                busyChannelId.value = null
+                busyChannelIds.value = busyChannelIds.value - id
             }
         }
     }

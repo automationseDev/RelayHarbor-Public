@@ -8,6 +8,11 @@ enum class NotificationAction {
 /** Local-only statuses; incoming webhook events never execute actions automatically. */
 object NotificationCenterRules {
     const val PRIORITY_SCORE = 85
+
+    /** Select only unread, received notifications in the user's current view. */
+    fun visibleUnreadIds(messages: List<MessageEntity>): List<Long> =
+        messages.asSequence().filter { !it.fromMe && !it.isRead && it.id > 0L }
+            .map { it.id }.distinct().toList()
     val filters = setOf("all", "important", "unread", "later", "done", "read")
 
     fun filterId(value: String?): String = value?.takeIf { it in filters } ?: "all"

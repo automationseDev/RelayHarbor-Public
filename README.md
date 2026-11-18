@@ -1,3 +1,7 @@
+## v0.13.0 — チャットと通知の操作性改善
+
+チャット内検索（スレッド内の返信も検索）、未読・固定・あとでの絞り込み、AIクイックプロンプト下書き、通知センターの表示範囲限定一括既読と取り消し、AI送信時のテキスト保護・二重送信防止を追加しました。既存のRoom DBはそのまま移行不要です。詳しくは [v0.13.0 改善内容](docs/quality-of-life-v0.13.0.md) を参照してください。
+
 # RelayHarbor
 
 **Android-first local notification and AI/Bot chat hub.**

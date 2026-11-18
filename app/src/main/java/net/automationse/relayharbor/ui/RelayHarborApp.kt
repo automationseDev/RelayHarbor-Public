@@ -165,7 +165,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     val integrationTransferBusy by vm.integrationTransferBusy.collectAsState()
     val appUpdateState by vm.appUpdateState.collectAsState()
     val aiError by vm.aiError.collectAsState()
-    val busyChannelId by vm.busyChannelId.collectAsState()
+    val busyChannelIds by vm.busyChannelIds.collectAsState()
 
     // Poll only when the activity is visible. As a default HOME app the Compose
     // composition can survive after opening another app or turning off the screen.
@@ -447,7 +447,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                                         onSend = vm::sendMessage,
                                         onDemo = vm::addDemoCard,
                                         onNotificationAction = vm::updateNotification,
-                                        sending = busyChannelId == selectedId,
+                                        sending = selectedId in busyChannelIds,
                                         error = aiError
                                     )
                                 } else {
@@ -499,6 +499,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     channels = displayChannels.associateBy { it.id },
                     onOpen = ::openChannel,
                     onNotificationAction = vm::updateNotification,
+                    onBulkRead = vm::bulkSetNotificationsRead,
                     twoPane = twoPane
                 )
                 "chat" -> {
@@ -529,7 +530,7 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                         onSend = vm::sendMessage,
                         onDemo = vm::addDemoCard,
                         onNotificationAction = vm::updateNotification,
-                        sending = busyChannelId == selectedId,
+                        sending = selectedId in busyChannelIds,
                         error = aiError
                     )
                     }

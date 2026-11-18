@@ -198,6 +198,10 @@ interface HubDao {
     @Query("UPDATE messages SET isRead = :read WHERE id = :messageId AND fromMe = 0")
     suspend fun setMessageRead(messageId: Long, read: Boolean)
 
+    /** Batched marking for only the explicit visible IDs; avoids altering other channels. */
+    @Query("UPDATE messages SET isRead = :read WHERE id IN (:messageIds) AND fromMe = 0")
+    suspend fun setMessagesRead(messageIds: List<Long>, read: Boolean)
+
     @Query("UPDATE messages SET isPinned = :pinned WHERE id = :messageId AND fromMe = 0")
     suspend fun setMessagePinned(messageId: Long, pinned: Boolean)
 
