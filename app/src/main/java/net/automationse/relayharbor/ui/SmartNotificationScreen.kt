@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -336,6 +337,7 @@ internal fun ActivityScreen(
     channels: Map<Long, ChannelEntity>,
     onOpen: (Long) -> Unit,
     onNotificationAction: (Long, NotificationAction) -> Unit,
+    onBulkRead: (List<Long>, Boolean) -> Unit,
     twoPane: Boolean = false
 ) {
     val context = LocalContext.current
@@ -343,6 +345,7 @@ internal fun ActivityScreen(
     var query by rememberSaveable { mutableStateOf(uiStore.activitySearch()) }
     var filter by rememberSaveable { mutableStateOf(uiStore.activityListFilter()) }
     var selectedMessageId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var confirmBulkReadIds by remember { mutableStateOf<List<Long>?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val visible = NotificationCenterRules.sort(
@@ -352,6 +355,7 @@ internal fun ActivityScreen(
             )
         }, filter
     )
+    val visibleUnreadIds = NotificationCenterRules.visibleUnreadIds(visible)
     val selected = if (twoPane) {
         visible.firstOrNull { it.id == selectedMessageId } ?: visible.firstOrNull()
     } else activity.firstOrNull { it.id == selectedMessageId }
@@ -445,12 +449,23 @@ internal fun ActivityScreen(
                         )
                     }
                 }
-                Text(
-                    "表示 ${visible.size} 件  ·  重要：固定または85点以上",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "表示 ${visible.size} 件 · 重要：固定または85点以上",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (visibleUnreadIds.isNotEmpty()) {
+                        TextButton(onClick = { confirmBulkReadIds = visibleUnreadIds }) {
+                            Text("一括既読 (${visibleUnreadIds.size})")
+                        }
+                    }
+                }
                 if (visible.isEmpty()) {
                     Box(
                         Modifier.fillMaxSize().padding(16.dp),
@@ -493,6 +508,36 @@ internal fun ActivityScreen(
                 }
             }
         }
+    }
+    confirmBulkReadIds?.let { ids ->
+        AlertDialog(
+            onDismissRequest = { confirmBulkReadIds = null },
+            title = { Text("表示中の未読をまとめて既読にしますか？") },
+            text = {
+                Text("${ids.size}件を既読にします。検索やフィルターから除外された通知には影響しません。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmBulkReadIds = null
+                    onBulkRead(ids, true)
+                    scope.launch {
+                        if (snackbarHostState.showSnackbar(
+                                "${ids.size}件を既読にしました",
+                                actionLabel = "元に戻す",
+                                duration = SnackbarDuration.Long
+                            ) == SnackbarResult.ActionPerformed
+                        ) {
+                            onBulkRead(ids, false)
+                        }
+                    }
+                }) { Text("一括既読にする") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmBulkReadIds = null }) {
+                    Text("キャンセル")
+                }
+            }
+        )
     }
     if (!twoPane && selected != null) {
         ModalBottomSheet(onDismissRequest = { selectedMessageId = null }) {
