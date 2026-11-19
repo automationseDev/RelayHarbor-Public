@@ -153,6 +153,9 @@ class AiUsageClient(private val relay: RelayClient = RelayClient()) {
 
     suspend fun exportCsv(endpoint: String, token: String, days: Int): String {
         require(days in AiUsageRules.periods)
-        return relay.execute(endpoint, token, "/v1/ai-usage/export?days=$days")
+        return relay.execute(
+            endpoint, token, "/v1/ai-usage/export?days=$days",
+            maxResponseBytes = 4_194_304
+        )
     }
 }
