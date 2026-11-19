@@ -179,7 +179,8 @@ def summary(database: Path, days: int, profiles: list[dict] | None = None) -> di
 
     present = {(m["profile_id"], m["model"]) for m in models}
     for profile in (profiles or []):
-        key = (profile["id"], profile["model"])
+        model_id = profile["model"] or "Dify app"
+        key = (profile["id"], model_id)
         if key in present:
             continue
         rate = rates.get(key)
