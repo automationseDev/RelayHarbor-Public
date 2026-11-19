@@ -94,7 +94,7 @@ class ChatTurn(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    provider: Literal["dify", "openai", "compatible"]
+    provider: Literal["dify", "openai", "compatible", "anthropic"]
     message: str = Field(min_length=1, max_length=12000)
     conversation_id: str | None = Field(default=None, max_length=160)
     history: list[ChatTurn] = Field(default_factory=list, max_length=20)
@@ -217,7 +217,7 @@ def openai_text(response: dict) -> str:
 
 class AiProfileDefinition(BaseModel):
     name: str = Field(min_length=1, max_length=60)
-    kind: Literal["openai", "compatible", "dify"]
+    kind: Literal["openai", "compatible", "dify", "anthropic"]
     base_url: str = Field(min_length=8, max_length=512)
     model: str = Field(default="", max_length=120)
     api_key: str = Field(default="", max_length=512)
@@ -295,6 +295,16 @@ def resolve_ai_profile(payload: ChatRequest) -> dict:
     raise HTTPException(status_code=503, detail="Select a configured AI profile")
 
 
+def anthropic_text(response: dict) -> str:
+    """Read text blocks only; never expose tool or thinking blocks as a chat reply."""
+    return "\n".join(
+        part.get("text", "")
+        for part in response.get("content", [])
+        if isinstance(part, dict) and part.get("type") == "text"
+        and isinstance(part.get("text"), str)
+    ).strip()
+
+
 def compatible_text(response: dict) -> str:
     choices = response.get("choices") or []
     message = (choices[0].get("message") or {}) if choices else {}
@@ -325,6 +335,13 @@ async def chat(
             "conversation_id": payload.conversation_id or "",
             "user": DIFY_USER,
         }
+    elif kind == "anthropic":
+        url = base_url + "/messages"
+        context = [{"role": turn.role, "content": turn.content}
+                   for turn in payload.history[-12:]]
+        body = {"model": profile["model"], "max_tokens": 1024, "messages": context + [
+            {"role": "user", "content": payload.message}
+        ]}
     elif kind == "compatible":
         url = base_url + "/chat/completions"
         context = [{"role": turn.role, "content": turn.content}
@@ -339,9 +356,13 @@ async def chat(
         body = {"model": profile["model"], "input": context + [
             {"role": "user", "content": payload.message}
         ], "store": False}
+    # Native Anthropic Messages uses x-api-key and a version header; OpenAI-compatible
+    # and Dify integrations continue using Bearer authentication.
+    headers = ({"x-api-key": key, "anthropic-version": "2023-06-01"}
+               if kind == "anthropic" else {"Authorization": "Bearer " + key})
     try:
         async with httpx.AsyncClient(timeout=90, follow_redirects=False, trust_env=False) as client:
-            result = await client.post(url, headers={"Authorization": "Bearer " + key}, json=body)
+            result = await client.post(url, headers=headers, json=body)
     except httpx.RequestError:
         raise HTTPException(status_code=502, detail="Provider network error") from None
     if result.status_code >= 400:
@@ -350,6 +371,7 @@ async def chat(
     try:
         data = result.json()
         answer = (data.get("answer", "") if kind == "dify"
+                  else anthropic_text(data) if kind == "anthropic"
                   else compatible_text(data) if kind == "compatible"
                   else openai_text(data))
         answer = answer.strip()

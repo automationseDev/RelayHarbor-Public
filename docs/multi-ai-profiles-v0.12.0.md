@@ -2,7 +2,7 @@
 
 ## What is supported
 - **設定 → AI接続先の管理**: securely create, edit, delete and list up to 30 named AI profiles.
-- Types: OpenAI Responses API (provider type \`openai\`), OpenAI-compatible chat completions API (\`compatible\`; includes services offering a compatible endpoint), and Dify Chat API (\`dify\`).
+- Types: OpenAI Responses API (`openai`), Anthropic Claude Messages API (`anthropic`), OpenAI-compatible Chat Completions API (`compatible`) and Dify Chat API (`dify`).
 - Multiple models and different API keys or endpoints may be registered, including more than one account/model at the same provider.
 - **チャット → 🤖 selector**: choose default (old AI setting), off, or an individually configured AI for each channel. Choices persist across restarts and are isolated by Relay endpoint.
 - Each AI profile retains separate chat context and Dify conversation IDs within the channel; old untargeted messages remain available to the legacy provider during migration.
@@ -37,4 +37,27 @@
 - Relay integration tests verify multiple independently encrypted keys, CRUD permissions, API key redaction, invalid URLs, profile-specific model dispatch and legacy endpoint handling.
 - Android CI compiles and runs unit tests. Unit tests cover profile validation.
 - Manual tests recommended: existing v0.11.0 app update without uninstall, local-only mode, losing the network, legacy env-only server, Fold cover/expanded layout, selected AI persistence and mixed profiles in different channels.
-- **Limitations:** no Anthropic-native API support (only OpenAI-compatible offerings), no cross-device sync of channel selections, no access to localhost/private URLs for user-created profiles, no multi-user authentication and no remote synchronization of thread replies.
+- **Limitations:** no simultaneous multi-model response or automatic failover, no cross-device sync of channel selections, no private/local base URLs for profiles, no multi-user auth and no remote sync of thread replies.
+
+## Provider catalog extension (post-v0.13.0 feature branch)
+
+In **設定 → AI接続先の管理 → + AI接続先を追加**, choose a provider preset; base URL and model ID remain editable. Save each model as a separate profile (including multiple profiles for one provider).
+
+| Preset | Protocol | Base URL |
+| --- | --- | --- |
+| OpenAI | Responses API | `https://api.openai.com/v1` |
+| Claude (Anthropic) | Messages API | `https://api.anthropic.com/v1` |
+| Google Gemini | OpenAI-compatible | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| Groq | OpenAI-compatible | `https://api.groq.com/openai/v1` |
+| OpenRouter | OpenAI-compatible | `https://openrouter.ai/api/v1` |
+| DeepSeek | OpenAI-compatible | `https://api.deepseek.com` |
+| xAI (Grok) | OpenAI-compatible | `https://api.x.ai/v1` |
+| Mistral | OpenAI-compatible | `https://api.mistral.ai/v1` |
+| Dify | Dify Chat API | user-defined public HTTPS endpoint |
+| Other | OpenAI-compatible | user-defined public HTTPS endpoint |
+
+Suggested model IDs are examples, not availability checks; verify active models and pricing. xAI and custom profiles require manual model entry. The Claude free chat and ChatGPT Plus subscriptions do not include API access.
+
+**Upgrade:** Both Android APK and Relay backend need this change for native Anthropic. No Room or Relay schema migration: existing encrypted API keys, channel assignments, old clients and legacy AI profiles remain supported. Application ID and signing identity are unchanged.
+
+**Security:** API keys travel to the authenticated HTTPS Relay server and remain encrypted at rest. Anthropic requests use `x-api-key` and `anthropic-version: 2023-06-01`. Do not put provider secrets in code or public repositories.

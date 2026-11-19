@@ -1,6 +1,7 @@
 package net.automationse.relayharbor.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +12,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -27,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import net.automationse.relayharbor.integration.AiProfile
 import net.automationse.relayharbor.integration.AiProfileDraft
 import net.automationse.relayharbor.integration.AiProfileRules
+import net.automationse.relayharbor.integration.AiProviderPresets
 
 /** Provider API keys remain transient in the dialog and are sent only to Relay via HTTPS. */
 @Composable
@@ -51,7 +56,7 @@ internal fun AiProfilesSection(
             Text("AI接続先の管理", style = MaterialTheme.typography.titleMedium)
             TextButton(onClick = onRefresh, enabled = !busy) { Text("再取得") }
         }
-        Text("OpenAI・OpenAI互換API・Difyを複数登録できます。APIキーはRelayで暗号化保存され、端末には保存しません。",
+        Text("OpenAI・Claude・Gemini・Groq・OpenRouterなどを複数登録できます。APIキーはRelayで暗号化保存され、端末には保存しません。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -130,6 +135,10 @@ private fun AiProfileEditor(
         mutableStateOf(existing?.model ?: "gpt-4.1-mini")
     }
     var secret by remember(existing?.id) { mutableStateOf("") }
+    var presetOpen by remember(existing?.id) { mutableStateOf(false) }
+    var presetId by remember(existing?.id) {
+        mutableStateOf(AiProviderPresets.guess(kind, baseUrl))
+    }
     val draft = AiProfileDraft(name, kind, baseUrl, model, secret)
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -143,23 +152,44 @@ private fun AiProfileEditor(
                     label = { Text("表示名") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Column {
-                    listOf(
-                        "openai" to "OpenAI",
-                        "compatible" to "OpenAI互換API",
-                        "dify" to "Dify"
-                    ).forEach { (value, label) ->
-                        FilterChip(selected = kind == value, onClick = {
-                            if (kind != value) {
-                                if (value == "openai" && kind != "openai") {
-                                    baseUrl = "https://api.openai.com/v1"
-                                } else if (kind == "openai") {
-                                    baseUrl = ""
-                                }
-                                kind = value
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("接続サービス", style = MaterialTheme.typography.labelMedium)
+                    Box {
+                        OutlinedButton(
+                            onClick = { presetOpen = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text((AiProviderPresets.options.firstOrNull { it.id == presetId }?.label
+                                ?: "その他") + " ▾")
+                        }
+                        DropdownMenu(
+                            expanded = presetOpen,
+                            onDismissRequest = { presetOpen = false },
+                            modifier = Modifier.heightIn(max = 360.dp)
+                        ) {
+                            AiProviderPresets.options.forEach { preset ->
+                                DropdownMenuItem(
+                                    text = { Text(preset.label) },
+                                    onClick = {
+                                        val previous = AiProviderPresets.options
+                                            .firstOrNull { it.id == presetId }
+                                        if (existing == null && (name.isBlank() ||
+                                                name == previous?.label)) {
+                                            name = preset.label
+                                        }
+                                        presetId = preset.id
+                                        kind = preset.kind
+                                        baseUrl = preset.baseUrl
+                                        model = preset.suggestedModel
+                                        presetOpen = false
+                                    }
+                                )
                             }
-                        }, label = { Text(label) })
+                        }
                     }
+                    Text("URL・モデルIDは変更できます。同じサービスの別モデルも追加登録できます。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 OutlinedTextField(
                     value = baseUrl, onValueChange = { baseUrl = it.take(512) },
@@ -183,7 +213,7 @@ private fun AiProfileEditor(
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
-                Text("キーは端末に保存されません。RelayがHTTPSで受け取り、サーバー内で暗号化します。",
+                Text("AI各社の無料チャット契約とAPIは別です。利用料金・無料枠・モデルIDは各社で確認してください。キーは端末に保存されずRelayで暗号化されます。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

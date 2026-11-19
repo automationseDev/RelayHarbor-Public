@@ -26,4 +26,20 @@ class AiProfileRulesTest {
         assertFalse(AiProfileRules.valid(draft.copy(model = "model", kind = "unknown"), true))
         assertEquals("OpenAI互換", AiProfileRules.kindLabel("compatible"))
     }
+
+    @Test fun anthropicAndProviderPresetsAreAvailable() {
+        val claude = AiProviderPresets.options.first { it.id == "claude" }
+        assertEquals("anthropic", claude.kind)
+        assertEquals("https://api.anthropic.com/v1", claude.baseUrl)
+        assertTrue(AiProfileRules.valid(AiProfileDraft(
+            "Claude", claude.kind, claude.baseUrl, claude.suggestedModel, "test-key"
+        ), true))
+        assertEquals("claude", AiProviderPresets.guess(claude.kind, claude.baseUrl))
+        assertEquals("gemini", AiProviderPresets.guess(
+            "compatible", "https://generativelanguage.googleapis.com/v1beta/openai/"
+        ))
+        assertEquals("custom", AiProviderPresets.guess("compatible", "https://other.example/v1"))
+        assertTrue(AiProviderPresets.options.map { it.id }.distinct().size ==
+            AiProviderPresets.options.size)
+    }
 }
