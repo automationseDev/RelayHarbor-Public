@@ -104,3 +104,44 @@ def test_no_provider_secret_leak_and_mismatched_key(client, monkeypatch):
         json={"provider": "openai", "profile_id": pid, "message": "hello"})
     assert res.status_code == 503
     assert "secret-openai-key" not in res.text
+
+
+def test_native_anthropic_profile_dispatch(client, monkeypatch):
+    profile = client.post("/v1/ai-profiles", headers=AUTH, json=dict(
+        NEW, name="Claude API", kind="anthropic",
+        base_url="https://api.anthropic.com/v1", model="claude-sonnet-4-6",
+        api_key="native-claude-key"))
+    assert profile.status_code == 201
+    profile_id = profile.json()["id"]
+    original = httpx.AsyncClient
+
+    def handler(request):
+        import json
+        body = json.loads(request.content)
+        assert request.url.path == "/v1/messages"
+        assert request.headers["x-api-key"] == "native-claude-key"
+        assert request.headers["anthropic-version"] == "2023-06-01"
+        assert "Bearer native-claude-key" not in request.headers.get("authorization", "")
+        assert body["model"] == "claude-sonnet-4-6"
+        assert body["max_tokens"] > 0
+        assert body["messages"] == [
+            {"role": "user", "content": "previous"},
+            {"role": "assistant", "content": "response"},
+            {"role": "user", "content": "next"},
+        ]
+        return httpx.Response(200, json={"content": [
+            {"type": "thinking", "thinking": "internal"},
+            {"type": "text", "text": "Hello from Claude"},
+        ]})
+
+    monkeypatch.setattr(server.httpx, "AsyncClient",
+                        lambda **kw: original(transport=httpx.MockTransport(handler), **kw))
+    result = client.post("/v1/chat", headers=AUTH, json={
+        "provider": "anthropic", "profile_id": profile_id, "message": "next",
+        "history": [{"role": "user", "content": "previous"},
+                    {"role": "assistant", "content": "response"}]
+    })
+    assert result.status_code == 200, result.text
+    assert result.json()["answer"] == "Hello from Claude"
+    assert result.json()["provider"] == "anthropic"
+    assert "internal" not in result.text
