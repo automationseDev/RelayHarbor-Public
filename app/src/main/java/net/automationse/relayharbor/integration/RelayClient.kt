@@ -43,8 +43,10 @@ class RelayClient {
         token: String,
         route: String,
         body: String? = null,
-        method: String? = null
+        method: String? = null,
+        maxResponseBytes: Int = 524_288
     ): String = withContext(Dispatchers.IO) {
+        require(maxResponseBytes in 1..4_194_304)
         require(validEndpoint(endpoint)) { "HTTPSの接続先を設定してください" }
         require(token.isNotBlank()) { "接続トークンを設定してください" }
         val base = endpoint.trim().trimEnd('/')
