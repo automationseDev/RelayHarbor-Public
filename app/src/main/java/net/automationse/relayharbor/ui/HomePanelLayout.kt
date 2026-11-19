@@ -37,12 +37,13 @@ internal object HomePanelLayout {
     fun isNative(id: String): Boolean = nativeWidgetId(id) != null
     val miniWidgetIds = setOf("clock", "date", "weather", "agenda", "battery")
     // Legacy "drawer" card was folded into the favorites header; old saved layouts are normalized.
-    val panelIds = listOf("overview", "apps", "sync", "activity", "channels",
+    val panelIds = listOf("overview", "apps", "sync", "ai_usage", "activity", "channels",
         "clock", "weather", "date", "battery", "agenda")
     val titles = mapOf(
         "overview" to "ワークスペース",
         "apps" to "お気に入りアプリ",
         "sync" to "同期・通知",
+        "ai_usage" to "AI使用量",
         "activity" to "最近の通知",
         "channels" to "チャットチャンネル",
         "clock" to "時計",
@@ -59,6 +60,7 @@ internal object HomePanelLayout {
             HomePanel("overview", if (wide) 2 else 2, 1),
             HomePanel("apps", if (wide) 4 else 2, 3),
             HomePanel("sync", if (wide) 2 else 2, 2),
+            HomePanel("ai_usage", if (wide) 2 else 2, 2),
             HomePanel("activity", if (wide) 2 else 2, 3),
             HomePanel("channels", if (wide) 4 else 2, 3),
             HomePanel("clock", if (wide) 2 else 1, 1),
@@ -131,7 +133,9 @@ internal object HomePanelLayout {
             original.getValue(id).copy(span = span, visible = show, manualHeight = false)
         }
         // Preset changes never silently orphan a user's configured OS widgets.
-        return selected + normalize(profile, current).filter { isNative(it.id) }
+        return selected + original.getValue("ai_usage").copy(
+            visible = true, manualHeight = false
+        ) + normalize(profile, current).filter { isNative(it.id) }
     }
 
     /** Newly allocated system IDs are only committed after bind/configure succeeds. */
