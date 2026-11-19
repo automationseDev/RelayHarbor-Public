@@ -330,6 +330,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
                 val label = profile?.name ?: when (provider) {
                     "dify" -> "Dify"
                     "compatible" -> "OpenAI互換AI"
+                    "anthropic" -> "Claude"
                     else -> "OpenAI"
                 }
                 val replyId = repository.addAiReply(id, label, result.answer, profileKey)
