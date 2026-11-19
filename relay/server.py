@@ -329,9 +329,11 @@ class AiUsageRateDefinition(BaseModel):
 
 
 @app.get("/v1/ai-usage")
-def ai_usage_summary(days: Literal[1, 7, 30, 90, 365] = 30,
+def ai_usage_summary(days: int = 30,
                      authorization: str | None = Header(default=None)):
     authorize(authorization, CLIENT_TOKEN)
+    if days not in ai_usage.PERIODS:
+        raise HTTPException(status_code=422, detail="Unsupported usage period")
     return ai_usage.summary(DATABASE, days, configured_profiles() + ai_profiles.list_profiles(DATABASE))
 
 
@@ -352,12 +354,14 @@ def ai_usage_set_rates(payload: AiUsageRateDefinition,
 
 
 @app.get("/v1/ai-usage/export")
-def ai_usage_export(days: Literal[1, 7, 30, 90, 365] = 30,
+def ai_usage_export(days: int = 30,
                     authorization: str | None = Header(default=None)):
     authorize(authorization, CLIENT_TOKEN)
+    if days not in ai_usage.PERIODS:
+        raise HTTPException(status_code=422, detail="Unsupported usage period")
     document = ai_usage.csv_export(DATABASE, days)
     # UTF-8 BOM helps Excel display Japanese names; no message contents or keys.
-    return Response(content="\\ufeff" + document, media_type="text/csv; charset=utf-8",
+    return Response(content=chr(65279) + document, media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": "attachment; filename=ai-usage.csv"})
 
 
