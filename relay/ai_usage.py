@@ -186,7 +186,7 @@ def summary(database: Path, days: int, profiles: list[dict] | None = None) -> di
         rate = rates.get(key)
         models.append({
             "profile_id": profile["id"], "profile_name": profile["name"],
-            "kind": profile["kind"], "model": profile["model"],
+            "kind": profile["kind"], "model": model_id,
             "requests": 0, "success_count": 0, "error_count": 0,
             "input_tokens": 0, "output_tokens": 0, "unreported_calls": 0,
             "average_latency_ms": 0, "estimated_usd": 0.0 if rate else None,
