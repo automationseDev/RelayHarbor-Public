@@ -25,6 +25,8 @@ import net.automationse.relayharbor.data.HubRepository
 import net.automationse.relayharbor.integration.RelayClient
 import net.automationse.relayharbor.integration.AiProfile
 import net.automationse.relayharbor.integration.AiProfileClient
+import net.automationse.relayharbor.integration.AiUsageClient
+import net.automationse.relayharbor.integration.AiUsageSummary
 import net.automationse.relayharbor.integration.AiProfileDraft
 import net.automationse.relayharbor.integration.IntegrationClient
 import net.automationse.relayharbor.integration.IntegrationConnection
@@ -57,6 +59,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     private val conversationStore = RelayConversationStore(app)
     private val relayClient = RelayClient()
     private val aiProfileClient = AiProfileClient(relayClient)
+    private val aiUsageClient = AiUsageClient(relayClient)
     private val aiChannelStore = AiChannelSelectionStore(app)
     private val integrationClient = IntegrationClient(relayClient)
     private val syncMutex = Mutex()
@@ -152,6 +155,66 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     val aiProfileCanManage = MutableStateFlow(false)
     val aiProfileBusy = MutableStateFlow(false)
     val selectedAiChoice = MutableStateFlow("default")
+    val aiUsageSummary = MutableStateFlow<AiUsageSummary?>(null)
+    val aiUsageDays = MutableStateFlow(30)
+    val aiUsageBusy = MutableStateFlow(false)
+    val aiUsageStatus = MutableStateFlow("AI利用状況を取得できます")
+
+    fun refreshAiUsage(days: Int = aiUsageDays.value) {
+        if (days !in net.automationse.relayharbor.integration.AiUsageRules.periods) return
+        aiUsageDays.value = days
+        viewModelScope.launch {
+            aiUsageBusy.value = true
+            try {
+                val (endpoint, token) = integrationAuth()
+                val result = aiUsageClient.summary(endpoint, token, days)
+                if (aiUsageDays.value == days &&
+                    connectionStore.settings.first().endpoint.trimEnd('/') == endpoint) {
+                    aiUsageSummary.value = result
+                    aiUsageStatus.value = "直近${days}日の集計を表示しています（JST）"
+                }
+            } catch (error: Exception) {
+                if (aiUsageDays.value == days) {
+                    aiUsageSummary.value = null
+                    aiUsageStatus.value = "使用状況を取得できません：" +
+                        (error.message ?: "Relayサーバーを更新してください")
+                }
+            } finally {
+                if (aiUsageDays.value == days) aiUsageBusy.value = false
+            }
+        }
+    }
+
+    fun saveAiUsageRates(profileId: String, model: String,
+                         inputUsd: Double?, outputUsd: Double?) {
+        viewModelScope.launch {
+            try {
+                val (endpoint, token) = integrationAuth()
+                aiUsageClient.setRates(endpoint, token, profileId, model, inputUsd, outputUsd)
+                aiUsageStatus.value = "モデル単価を更新しました"
+                refreshAiUsage()
+            } catch (error: Exception) {
+                aiUsageStatus.value = "単価の保存に失敗：" + (error.message ?: "通信エラー")
+            }
+        }
+    }
+
+    fun exportAiUsage(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val (endpoint, token) = integrationAuth()
+                val csv = aiUsageClient.exportCsv(endpoint, token, aiUsageDays.value)
+                withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openOutputStream(uri)
+                        ?.use { output -> output.write(csv.toByteArray(Charsets.UTF_8)) }
+                        ?: error("保存先を開けません")
+                }
+                aiUsageStatus.value = "AI利用状況をCSV出力しました"
+            } catch (error: Exception) {
+                aiUsageStatus.value = "CSV出力に失敗：" + (error.message ?: "通信エラー")
+            }
+        }
+    }
 
     fun chooseAiForChannel(choice: String) {
         val id = currentChannel.value ?: return
