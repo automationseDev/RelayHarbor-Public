@@ -13,8 +13,8 @@ android {
         applicationId = "net.automationse.relayharbor"
         minSdk = 26
         targetSdk = 35
-        versionCode = 44
-        versionName = "0.13.0"
+        versionCode = 45
+        versionName = "0.13.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
