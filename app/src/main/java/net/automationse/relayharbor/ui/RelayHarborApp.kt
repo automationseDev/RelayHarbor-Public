@@ -154,6 +154,10 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     val aiProfileStatus by vm.aiProfileStatus.collectAsState()
     val aiProfileCanManage by vm.aiProfileCanManage.collectAsState()
     val aiProfileBusy by vm.aiProfileBusy.collectAsState()
+    val aiUsage by vm.aiUsageSummary.collectAsState()
+    val aiUsageDays by vm.aiUsageDays.collectAsState()
+    val aiUsageBusy by vm.aiUsageBusy.collectAsState()
+    val aiUsageStatus by vm.aiUsageStatus.collectAsState()
     val selectedAiChoice by vm.selectedAiChoice.collectAsState()
     val reactions by vm.reactions.collectAsState()
     val settings by vm.connectionSettings.collectAsState()
@@ -234,7 +238,13 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     }
     LaunchedEffect(page, settings.endpoint, tokenConfigured) {
         if (page == "integrations") vm.refreshIntegrations()
-        if (page == "settings") vm.refreshAiProfiles()
+        if (page == "home" && settings.mode != "local" && tokenConfigured) {
+            vm.refreshAiUsage()
+        }
+        if (page == "settings") {
+            vm.refreshAiProfiles()
+            vm.refreshAiUsage()
+        }
     }
     val summaryById = remember(summaries) { summaries.associateBy { it.channelId } }
     val unreadCount = summaries.sumOf { it.unreadCount }
@@ -354,6 +364,8 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
             pageStates.SaveableStateProvider(page) {
             when (page) {
                 "home" -> HomeScreen(
+                    aiUsage = aiUsage,
+                    onOpenAiSummary = { page = "settings" },
                     channels = displayChannels,
                     summaries = summaryById,
                     activity = activity,
@@ -572,6 +584,13 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     onCreateAiProfile = vm::createAiProfile,
                     onUpdateAiProfile = vm::updateAiProfile,
                     onDeleteAiProfile = vm::deleteAiProfile,
+                    aiUsage = aiUsage,
+                    aiUsageDays = aiUsageDays,
+                    aiUsageBusy = aiUsageBusy,
+                    aiUsageStatus = aiUsageStatus,
+                    onRefreshAiUsage = vm::refreshAiUsage,
+                    onSaveAiUsageRates = vm::saveAiUsageRates,
+                    onExportAiUsage = vm::exportAiUsage,
                     onSave = vm::saveSettings,
                     onClearToken = vm::clearToken,
                     onSync = vm::syncNow,
@@ -660,6 +679,8 @@ private fun WorkspaceBar(title: String, subtitle: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeScreen(
+    aiUsage: net.automationse.relayharbor.integration.AiUsageSummary?,
+    onOpenAiSummary: () -> Unit,
     channels: List<ChannelEntity>,
     summaries: Map<Long, ChannelSummary>,
     activity: List<MessageEntity>,
@@ -876,6 +897,32 @@ private fun HomeScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+                    id == "ai_usage" -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (!syncAvailable) {
+                                Text("Relayに接続するとAI利用状況を表示します。",
+                                    style = MaterialTheme.typography.bodySmall)
+                            } else if (aiUsage == null) {
+                                Text("まだ利用状況を取得していません。",
+                                    style = MaterialTheme.typography.bodySmall)
+                            } else {
+                                Text("直近${aiUsage.periodDays}日：${aiUsage.totals.requests}回",
+                                    style = MaterialTheme.typography.titleMedium)
+                                Text("入力 ${aiUsage.totals.inputTokens} / 出力 ${aiUsage.totals.outputTokens} tokens",
+                                    style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    aiUsage.totals.estimatedUsd?.let {
+                                        "推定 $" + String.format(java.util.Locale.US, "%.6f", it)
+                                    } ?: "推定料金：単価未設定・使用量不明",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            TextButton(onClick = onOpenAiSummary) {
+                                Text("詳細を見る")
+                            }
                         }
                     }
                     id == "apps" -> QuickAppsSection(

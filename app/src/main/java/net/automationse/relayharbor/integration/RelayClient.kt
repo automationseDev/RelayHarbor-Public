@@ -43,8 +43,10 @@ class RelayClient {
         token: String,
         route: String,
         body: String? = null,
-        method: String? = null
+        method: String? = null,
+        maxResponseBytes: Int = 524_288
     ): String = withContext(Dispatchers.IO) {
+        require(maxResponseBytes in 1..4_194_304)
         require(validEndpoint(endpoint)) { "HTTPSの接続先を設定してください" }
         require(token.isNotBlank()) { "接続トークンを設定してください" }
         val base = endpoint.trim().trimEnd('/')
@@ -97,7 +99,7 @@ class RelayClient {
                     val count = reader.read(buffer)
                     if (count < 0) break
                     size += count
-                    require(size <= 524288) { "サーバーの応答サイズが大きすぎます" }
+                    require(size <= maxResponseBytes) { "サーバーの応答サイズが大きすぎます" }
                     response.append(buffer, 0, count)
                 }
                 response.toString()

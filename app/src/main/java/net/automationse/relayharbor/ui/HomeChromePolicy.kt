@@ -16,6 +16,7 @@ internal object HomePanelHeaders {
             allAppsActionLabel = "すべてのアプリ"
         )
         "sync" -> HomePanelHeaderSpec("同期・通知")
+        "ai_usage" -> HomePanelHeaderSpec("AI使用量")
         "activity" -> HomePanelHeaderSpec("最近のアクティビティ", "すべて見る")
         "channels" -> HomePanelHeaderSpec("チャンネル", "一覧へ")
         "clock" -> HomePanelHeaderSpec("時計")

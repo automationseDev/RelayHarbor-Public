@@ -1,6 +1,7 @@
 package net.automationse.relayharbor.ui
 
 import android.Manifest
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import net.automationse.relayharbor.integration.AiProfile
 import net.automationse.relayharbor.integration.AiProfileDraft
+import net.automationse.relayharbor.integration.AiUsageSummary
 import net.automationse.relayharbor.data.ConnectionSettings
 import net.automationse.relayharbor.integration.RelayClient
 import net.automationse.relayharbor.integration.AppUpdater
@@ -59,6 +61,13 @@ fun SettingsScreen(
     onCreateAiProfile: (AiProfileDraft) -> Unit,
     onUpdateAiProfile: (String, AiProfileDraft) -> Unit,
     onDeleteAiProfile: (String) -> Unit,
+    aiUsage: AiUsageSummary?,
+    aiUsageDays: Int,
+    aiUsageBusy: Boolean,
+    aiUsageStatus: String,
+    onRefreshAiUsage: (Int) -> Unit,
+    onSaveAiUsageRates: (String, String, Double?, Double?) -> Unit,
+    onExportAiUsage: (Uri) -> Unit,
     onSave: (String, String, String, String) -> Unit,
     onClearToken: () -> Unit,
     onSync: () -> Unit,
@@ -98,6 +107,9 @@ fun SettingsScreen(
         notificationPermission = MessageNotifications.hasPermission(context)
         NotificationSyncScheduler.refresh(context)
     }
+    val usageExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri -> if (uri != null) onExportAiUsage(uri) }
 
     Scaffold(topBar = { TopAppBar(title = { Text("接続と設定") }) }) { inner ->
         Column(
@@ -170,6 +182,17 @@ fun SettingsScreen(
                 onCreate = onCreateAiProfile,
                 onUpdate = onUpdateAiProfile,
                 onDelete = onDeleteAiProfile
+            )
+            HorizontalDivider()
+            AiUsageSection(
+                summary = aiUsage,
+                days = aiUsageDays,
+                busy = aiUsageBusy,
+                status = aiUsageStatus,
+                onPeriod = onRefreshAiUsage,
+                onRefresh = { onRefreshAiUsage(aiUsageDays) },
+                onSaveRates = onSaveAiUsageRates,
+                onExport = { usageExportLauncher.launch("RelayHarbor-AI-usage-${aiUsageDays}days.csv") }
             )
             HorizontalDivider()
             Text(

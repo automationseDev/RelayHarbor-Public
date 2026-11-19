@@ -11,6 +11,7 @@ import os
 import re
 import sqlite3
 import time
+import logging
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -23,7 +24,8 @@ import rss
 import website_monitor
 import image_metadata
 import ai_profiles
-from fastapi import FastAPI, Header, HTTPException, Request
+import ai_usage
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="RelayHarbor Relay", version="0.6.0", docs_url=None, redoc_url=None)
@@ -113,6 +115,7 @@ async def setup() -> None:
     rss.initialize(DATABASE)
     website_monitor.initialize(DATABASE)
     ai_profiles.initialize(DATABASE)
+    ai_usage.initialize(DATABASE)
     rss.start_worker()
     website_monitor.start_worker()
 
@@ -316,6 +319,52 @@ def compatible_text(response: dict) -> str:
     return content.strip() if isinstance(content, str) else ""
 
 
+class AiUsageRateDefinition(BaseModel):
+    profile_id: str = Field(min_length=1, max_length=80)
+    model: str = Field(default="", max_length=120)
+    input_usd_per_million: float | None = Field(default=None, ge=0, le=1000,
+                                                  allow_inf_nan=False)
+    output_usd_per_million: float | None = Field(default=None, ge=0, le=1000,
+                                                   allow_inf_nan=False)
+
+
+@app.get("/v1/ai-usage")
+def ai_usage_summary(days: int = 30,
+                     authorization: str | None = Header(default=None)):
+    authorize(authorization, CLIENT_TOKEN)
+    if days not in ai_usage.PERIODS:
+        raise HTTPException(status_code=422, detail="Unsupported usage period")
+    return ai_usage.summary(DATABASE, days, configured_profiles() + ai_profiles.list_profiles(DATABASE))
+
+
+@app.post("/v1/ai-usage/rates")
+def ai_usage_set_rates(payload: AiUsageRateDefinition,
+                       authorization: str | None = Header(default=None)):
+    authorize(authorization, CLIENT_TOKEN)
+    if (payload.profile_id not in {"legacy:openai", "legacy:dify"} and
+            not re.fullmatch(r"[a-f0-9]{32}", payload.profile_id)):
+        raise HTTPException(status_code=422, detail="Invalid profile identifier")
+    if ((payload.input_usd_per_million is None) !=
+            (payload.output_usd_per_million is None)):
+        raise HTTPException(status_code=422, detail="Set both rates or clear both")
+    ai_usage.set_rates(DATABASE, payload.profile_id, payload.model,
+                       payload.input_usd_per_million,
+                       payload.output_usd_per_million)
+    return {"saved": True}
+
+
+@app.get("/v1/ai-usage/export")
+def ai_usage_export(days: int = 30,
+                    authorization: str | None = Header(default=None)):
+    authorize(authorization, CLIENT_TOKEN)
+    if days not in ai_usage.PERIODS:
+        raise HTTPException(status_code=422, detail="Unsupported usage period")
+    document = ai_usage.csv_export(DATABASE, days)
+    # UTF-8 BOM helps Excel display Japanese names; no message contents or keys.
+    return Response(content=chr(65279) + document, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": "attachment; filename=ai-usage.csv"})
+
+
 @app.post("/v1/chat")
 async def chat(
     payload: ChatRequest,
@@ -326,63 +375,86 @@ async def chat(
     kind = profile["kind"]
     base_url = profile["base_url"].rstrip("/")
     key = profile["api_key"]
-    if kind == "dify":
-        url = base_url + "/chat-messages"
-        body = {
-            "inputs": {},
-            "query": payload.message,
-            "response_mode": "blocking",
-            "conversation_id": payload.conversation_id or "",
-            "user": DIFY_USER,
+    profile_id = payload.profile_id or "legacy:" + payload.provider
+    model = profile["model"] or "Dify app"
+    start = time.monotonic()
+    status = "error"
+    failure = "unexpected"
+    input_tokens = None
+    output_tokens = None
+    try:
+        if kind == "dify":
+            url = base_url + "/chat-messages"
+            body = {
+                "inputs": {}, "query": payload.message,
+                "response_mode": "blocking",
+                "conversation_id": payload.conversation_id or "",
+                "user": DIFY_USER,
+            }
+        elif kind == "anthropic":
+            url = base_url + "/messages"
+            context = [{"role": turn.role, "content": turn.content}
+                       for turn in payload.history[-12:]]
+            body = {"model": profile["model"], "max_tokens": 1024, "messages": context + [
+                {"role": "user", "content": payload.message}
+            ]}
+        elif kind == "compatible":
+            url = base_url + "/chat/completions"
+            context = [{"role": turn.role, "content": turn.content}
+                       for turn in payload.history[-12:]]
+            body = {"model": profile["model"], "messages": context + [
+                {"role": "user", "content": payload.message}
+            ], "stream": False}
+        else:
+            url = base_url + "/responses"
+            context = [{"role": turn.role, "content": turn.content}
+                       for turn in payload.history[-12:]]
+            body = {"model": profile["model"], "input": context + [
+                {"role": "user", "content": payload.message}
+            ], "store": False}
+        headers = ({"x-api-key": key, "anthropic-version": "2023-06-01"}
+                   if kind == "anthropic" else {"Authorization": "Bearer " + key})
+        try:
+            async with httpx.AsyncClient(timeout=90, follow_redirects=False, trust_env=False) as client:
+                result = await client.post(url, headers=headers, json=body)
+        except httpx.RequestError:
+            failure = "network"
+            raise HTTPException(status_code=502, detail="Provider network error") from None
+        if result.status_code >= 400:
+            failure = "provider_http"
+            raise HTTPException(status_code=502,
+                detail=f"Provider HTTP {result.status_code} (check relay configuration)")
+        try:
+            data = result.json()
+            input_tokens, output_tokens = ai_usage.extract_usage(kind, data)
+            answer = (data.get("answer", "") if kind == "dify"
+                      else anthropic_text(data) if kind == "anthropic"
+                      else compatible_text(data) if kind == "compatible"
+                      else openai_text(data))
+            answer = answer.strip()
+            if not answer:
+                raise ValueError("Empty answer")
+        except (ValueError, TypeError, AttributeError, IndexError):
+            failure = "bad_response"
+            raise HTTPException(status_code=502, detail="Provider returned no text answer") from None
+        status = "ok"
+        failure = ""
+        return {
+            "answer": answer, "provider": kind,
+            "profile_id": profile_id,
+            "conversation_id": (data.get("conversation_id") or "") if kind == "dify" else "",
         }
-    elif kind == "anthropic":
-        url = base_url + "/messages"
-        context = [{"role": turn.role, "content": turn.content}
-                   for turn in payload.history[-12:]]
-        body = {"model": profile["model"], "max_tokens": 1024, "messages": context + [
-            {"role": "user", "content": payload.message}
-        ]}
-    elif kind == "compatible":
-        url = base_url + "/chat/completions"
-        context = [{"role": turn.role, "content": turn.content}
-                   for turn in payload.history[-12:]]
-        body = {"model": profile["model"], "messages": context + [
-            {"role": "user", "content": payload.message}
-        ], "stream": False}
-    else:
-        url = base_url + "/responses"
-        context = [{"role": turn.role, "content": turn.content}
-                   for turn in payload.history[-12:]]
-        body = {"model": profile["model"], "input": context + [
-            {"role": "user", "content": payload.message}
-        ], "store": False}
-    # Native Anthropic Messages uses x-api-key and a version header; OpenAI-compatible
-    # and Dify integrations continue using Bearer authentication.
-    headers = ({"x-api-key": key, "anthropic-version": "2023-06-01"}
-               if kind == "anthropic" else {"Authorization": "Bearer " + key})
-    try:
-        async with httpx.AsyncClient(timeout=90, follow_redirects=False, trust_env=False) as client:
-            result = await client.post(url, headers=headers, json=body)
-    except httpx.RequestError:
-        raise HTTPException(status_code=502, detail="Provider network error") from None
-    if result.status_code >= 400:
-        raise HTTPException(status_code=502,
-                            detail=f"Provider HTTP {result.status_code} (check relay configuration)")
-    try:
-        data = result.json()
-        answer = (data.get("answer", "") if kind == "dify"
-                  else anthropic_text(data) if kind == "anthropic"
-                  else compatible_text(data) if kind == "compatible"
-                  else openai_text(data))
-        answer = answer.strip()
-        if not answer:
-            raise ValueError("Empty answer")
-    except (ValueError, TypeError, AttributeError, IndexError):
-        raise HTTPException(status_code=502, detail="Provider returned no text answer") from None
-    return {
-        "answer": answer,
-        "provider": kind,
-        "profile_id": payload.profile_id or "legacy:" + payload.provider,
-        "conversation_id": (data.get("conversation_id") or "")
-            if kind == "dify" else "",
-    }
+    finally:
+        # Usage recording is best-effort: a damaged stats table must never
+        # prevent existing chat calls from succeeding or returning their errors.
+        try:
+            ai_usage.record(
+                DATABASE, profile_id=profile_id,
+                profile_name=profile["name"], kind=kind, model=model,
+                status=status, input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                latency_ms=round((time.monotonic() - start) * 1000),
+                error_type=failure
+            )
+        except sqlite3.Error:
+            logging.warning("AI usage ledger write failed")
