@@ -34,7 +34,10 @@ def client(tmp_path, monkeypatch):
 def test_requires_client_auth(client):
     assert client.get("/v1/ai-usage").status_code == 401
     assert client.get("/v1/ai-usage/export").status_code == 401
-    assert client.post("/v1/ai-usage/rates", json={}).status_code == 401
+    assert client.post("/v1/ai-usage/rates", json={
+        "profile_id": "a" * 32, "model": "test-model",
+        "input_usd_per_million": 1.0, "output_usd_per_million": 1.0
+    }).status_code == 401
     assert client.get("/v1/ai-usage?days=999", headers=AUTH).status_code == 422
     assert client.get("/v1/ai-usage?days=30", headers=AUTH).status_code == 200
 
