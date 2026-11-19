@@ -18,7 +18,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException
 
 MAX_PROFILES = 30
-SUPPORTED_KINDS = {"openai", "compatible", "dify"}
+SUPPORTED_KINDS = {"openai", "compatible", "dify", "anthropic"}
 
 
 def initialize(database: Path) -> None:
