@@ -154,6 +154,10 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     val aiProfileStatus by vm.aiProfileStatus.collectAsState()
     val aiProfileCanManage by vm.aiProfileCanManage.collectAsState()
     val aiProfileBusy by vm.aiProfileBusy.collectAsState()
+    val aiUsage by vm.aiUsageSummary.collectAsState()
+    val aiUsageDays by vm.aiUsageDays.collectAsState()
+    val aiUsageBusy by vm.aiUsageBusy.collectAsState()
+    val aiUsageStatus by vm.aiUsageStatus.collectAsState()
     val selectedAiChoice by vm.selectedAiChoice.collectAsState()
     val reactions by vm.reactions.collectAsState()
     val settings by vm.connectionSettings.collectAsState()
@@ -234,7 +238,10 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
     }
     LaunchedEffect(page, settings.endpoint, tokenConfigured) {
         if (page == "integrations") vm.refreshIntegrations()
-        if (page == "settings") vm.refreshAiProfiles()
+        if (page == "settings") {
+            vm.refreshAiProfiles()
+            vm.refreshAiUsage()
+        }
     }
     val summaryById = remember(summaries) { summaries.associateBy { it.channelId } }
     val unreadCount = summaries.sumOf { it.unreadCount }
@@ -572,6 +579,13 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
                     onCreateAiProfile = vm::createAiProfile,
                     onUpdateAiProfile = vm::updateAiProfile,
                     onDeleteAiProfile = vm::deleteAiProfile,
+                    aiUsage = aiUsage,
+                    aiUsageDays = aiUsageDays,
+                    aiUsageBusy = aiUsageBusy,
+                    aiUsageStatus = aiUsageStatus,
+                    onRefreshAiUsage = vm::refreshAiUsage,
+                    onSaveAiUsageRates = vm::saveAiUsageRates,
+                    onExportAiUsage = vm::exportAiUsage,
                     onSave = vm::saveSettings,
                     onClearToken = vm::clearToken,
                     onSync = vm::syncNow,
