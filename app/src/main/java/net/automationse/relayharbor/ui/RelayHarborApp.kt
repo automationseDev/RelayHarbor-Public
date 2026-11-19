@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.horizontalScroll
@@ -347,7 +348,9 @@ fun RelayHarborApp(vm: HubViewModel = viewModel()) {
             }
         }
     ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
+        // Inform nested IME-aware screens that Scaffold has already applied the
+        // status/navigation-bar padding. Avoid double bottom padding above the IME.
+        Box(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
             pageStates.SaveableStateProvider(page) {
             when (page) {
                 "home" -> HomeScreen(
