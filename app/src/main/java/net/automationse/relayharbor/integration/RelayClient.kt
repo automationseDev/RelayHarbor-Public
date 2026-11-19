@@ -140,7 +140,7 @@ class RelayClient {
         history: List<RelayChatTurn>,
         profileId: String? = null
     ): RelayChatAnswer {
-        require(provider in setOf("openai", "dify", "compatible"))
+        require(provider in setOf("openai", "dify", "compatible", "anthropic"))
         val body = buildJsonObject {
             put("provider", provider)
             if (!profileId.isNullOrBlank()) put("profile_id", profileId)
