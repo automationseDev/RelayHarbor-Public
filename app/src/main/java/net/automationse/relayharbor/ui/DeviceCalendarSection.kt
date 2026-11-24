@@ -37,7 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +53,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.automationse.relayharbor.calendar.CalendarDayTone
+import net.automationse.relayharbor.calendar.CalendarFocusPolicy
+import net.automationse.relayharbor.calendar.CalendarOutline
 import net.automationse.relayharbor.calendar.CalendarHolidayPolicy
 import net.automationse.relayharbor.calendar.PersonalHoliday
 import net.automationse.relayharbor.calendar.PersonalHolidayStore
@@ -72,6 +74,31 @@ internal fun DeviceCalendarSection() {
     val lifecycleOwner = LocalLifecycleOwner.current
     var permission by remember { mutableStateOf(DeviceCalendarReader.permitted(context)) }
     var refresh by remember { mutableIntStateOf(0) }
+    // Unlike rememberSaveable, opening the Calendar tab afresh always focuses today.
+    var today by remember { mutableStateOf(LocalDate.now()) }
+    var monthIso by remember { mutableStateOf(YearMonth.from(today).toString()) }
+    var selectedIso by remember { mutableStateOf(today.toString()) }
+
+    fun updateToday() {
+        val now = LocalDate.now()
+        if (now != today) {
+            val previousToday = today
+            val selection = CalendarFocusPolicy.afterDayChange(
+                previousToday, LocalDate.parse(selectedIso), now
+            )
+            if (selection == now) monthIso = YearMonth.from(now).toString()
+            selectedIso = selection.toString()
+            today = now
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            updateToday()
+        }
+    }
+
     val permissionRequest = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -81,6 +108,7 @@ internal fun DeviceCalendarSection() {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                updateToday()
                 val granted = DeviceCalendarReader.permitted(context)
                 permission = granted
                 if (granted) refresh++
@@ -90,8 +118,6 @@ internal fun DeviceCalendarSection() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    var monthIso by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
-    var selectedIso by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
     val holidayStore = remember(context) { PersonalHolidayStore(context) }
     var personalDays by remember(context) { mutableStateOf(holidayStore.load()) }
     var holidayDialogOpen by remember { mutableStateOf(false) }
@@ -126,10 +152,9 @@ internal fun DeviceCalendarSection() {
     fun changeMonth(delta: Long) {
         val next = month.plusMonths(delta)
         monthIso = next.toString()
-        selectedIso = if (next == YearMonth.now()) LocalDate.now().toString()
+        selectedIso = if (next == YearMonth.from(today)) today.toString()
             else next.atDay(1).toString()
     }
-    val today = LocalDate.now()
     val darkPalette = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val redBackground = if (darkPalette) Color(0xFF4B2832) else Color(0xFFFFE9EC)
     val blueBackground = if (darkPalette) Color(0xFF24394F) else Color(0xFFE6F2FF)
@@ -187,7 +212,8 @@ internal fun DeviceCalendarSection() {
                         Icon(Icons.Default.ChevronRight, contentDescription = "次の月")
                     }
                     TextButton(onClick = {
-                        monthIso = YearMonth.now().toString()
+                        updateToday()
+                        monthIso = YearMonth.from(today).toString()
                         selectedIso = today.toString()
                     }) {
                         Text("今日")
@@ -219,6 +245,7 @@ internal fun DeviceCalendarSection() {
                             val day = week * 7 + weekday - offset + 1
                             val valid = day in 1..month.lengthOfMonth()
                             val date = if (valid) month.atDay(day) else null
+                            val outline = CalendarFocusPolicy.outline(date, today, selected)
                             val highlighted = date == selected
                             val manual = date?.let { personalDays[it] }
                             val tone = date?.let { CalendarHolidayPolicy.tone(it, manual) }
@@ -233,9 +260,16 @@ internal fun DeviceCalendarSection() {
                                     .padding(1.dp)
                                     .background(background, RoundedCornerShape(10.dp))
                                     .border(
-                                        width = if (highlighted) 2.dp else 0.dp,
-                                        color = if (highlighted) MaterialTheme.colorScheme.primary
-                                            else Color.Transparent,
+                                        width = when (outline) {
+                                            CalendarOutline.TODAY -> 2.5.dp
+                                            CalendarOutline.SELECTED -> 1.5.dp
+                                            CalendarOutline.NONE -> 0.dp
+                                        },
+                                        color = when (outline) {
+                                            CalendarOutline.TODAY -> MaterialTheme.colorScheme.primary
+                                            CalendarOutline.SELECTED -> MaterialTheme.colorScheme.tertiary
+                                            CalendarOutline.NONE -> Color.Transparent
+                                        },
                                         shape = RoundedCornerShape(10.dp)
                                     )
                                     .then(if (valid) Modifier.clickable {
@@ -294,6 +328,8 @@ internal fun DeviceCalendarSection() {
                         color = redText)
                     Text("土曜日", style = MaterialTheme.typography.labelSmall,
                         color = blueText)
+                    Text("今日：太枠", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary)
                     Text("日付を選んで休日設定", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

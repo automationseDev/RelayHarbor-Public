@@ -3,6 +3,8 @@ package net.automationse.relayharbor.ui
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.graphics.Bitmap
@@ -59,12 +61,20 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import androidx.compose.runtime.collectAsState
 import org.json.JSONArray
 
 private const val MAX_SHORTCUTS = 32
 
 /** Favorites are stored only on this device and never sent to a server. */
 internal class FavoriteAppStore(context: Context) {
+    companion object {
+        /** Revisions notify other visible home panels when the app drawer changes favorites. */
+        val changes = MutableStateFlow(0)
+    }
+
     private val prefs = context.applicationContext.getSharedPreferences(
         "favorite_app_shortcuts", Context.MODE_PRIVATE
     )
@@ -87,6 +97,7 @@ internal class FavoriteAppStore(context: Context) {
         val json = JSONArray()
         items.distinct().take(MAX_SHORTCUTS).forEach { json.put(it) }
         prefs.edit().putString("items", json.toString()).apply()
+        changes.update { it + 1 }
     }
 }
 
@@ -137,6 +148,17 @@ internal fun queryLaunchableApps(context: Context): List<LaunchableApp> {
         )
     }.distinctBy { it.key }
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+}
+
+/** Android's own app information screen, not an in-app permission editor. */
+internal fun openLaunchableAppInfo(context: Context, app: LaunchableApp) {
+    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+        data = Uri.fromParts("package", app.component.packageName, null)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { context.startActivity(intent) }.onFailure {
+        Toast.makeText(context, "アプリ情報を開けませんでした", Toast.LENGTH_SHORT).show()
+    }
 }
 
 internal fun launchFavoriteApp(context: Context, app: LaunchableApp) {
@@ -196,6 +218,9 @@ internal fun QuickAppsSection(
     val context = LocalContext.current
     val store = remember(context) { FavoriteAppStore(context) }
     var favorites by remember { mutableStateOf(store.load()) }
+    // All Apps and this widget may be visible together on Fold/launcher screens.
+    val favoriteRevision by FavoriteAppStore.changes.collectAsState()
+    LaunchedEffect(favoriteRevision) { favorites = store.load() }
     var displayMode by remember { mutableStateOf(store.layout()) }
     var apps by remember { mutableStateOf<List<LaunchableApp>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
