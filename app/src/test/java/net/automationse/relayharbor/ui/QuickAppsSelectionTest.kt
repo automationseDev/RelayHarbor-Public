@@ -4,6 +4,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class QuickAppsSelectionTest {
+    @Test fun drawerLongPressUsesSameFavoritesWithoutTogglingOtherEntries() {
+        val favorites = listOf("app-a", "app-b")
+        val added = toggleFavoriteApp(favorites, "app-c")
+        assertEquals(listOf("app-a", "app-b", "app-c"), added)
+        assertEquals(favorites, toggleFavoriteApp(added, "app-c"))
+    }
+
     @Test fun addsAndRemovesWithoutReorderingOtherApps() {
         val first = toggleFavoriteApp(emptyList(), "com.example.one/.Main")
         val second = toggleFavoriteApp(first, "com.example.two/.Start")
